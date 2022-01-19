@@ -40,26 +40,32 @@ let headers =
   in
   many header_field <* commit >>| Http.Header.of_list_rev
 
+exception Eof
+
 (*-- request-line = method SP request-target SP HTTP-version CRLF HTTP headers *)
 let[@warning "-3"] request =
-  let* meth = token >>| Http.Method.of_string <* space in
-  let* resource = take_while1 (fun c -> c != ' ') <* space in
-  let* version =
-    let* v = string "HTTP/1." *> digit <* crlf in
-    match v with
-    | '1' -> return `HTTP_1_1
-    | '0' -> return `HTTP_1_0
-    | _ -> fail (Format.sprintf "Invalid HTTP version: %c" v)
+  let request =
+    let* meth = token >>| Http.Method.of_string <* space in
+    let* resource = take_while1 (fun c -> c != ' ') <* space in
+    let* version =
+      let* v = string "HTTP/1." *> digit <* crlf in
+      match v with
+      | '1' -> return `HTTP_1_1
+      | '0' -> return `HTTP_1_0
+      | _ -> fail (Format.sprintf "Invalid HTTP version: %c" v)
+    in
+    let+ headers = headers <* commit in
+    {
+      Http.Request.headers;
+      meth;
+      scheme = None;
+      resource;
+      version;
+      encoding = Http.Header.get_transfer_encoding headers;
+    }
   in
-  let+ headers = headers <* commit in
-  {
-    Http.Request.headers;
-    meth;
-    scheme = None;
-    resource;
-    version;
-    encoding = Http.Header.get_transfer_encoding headers;
-  }
+  let eof = end_of_input >>| fun () -> raise Eof in
+  request <|> eof
 
 (* Chunked encoding parser *)
 
@@ -93,7 +99,7 @@ let chunk_exts =
   let chunk_ext_val = quoted_string <|> token in
   many
     (lift2
-       (fun name value : Body.chunk_extension -> { name; value })
+       (fun name value : Request.chunk_extension -> { name; value })
        (char ';' *> chunk_ext_name)
        (optional (char '=' *> chunk_ext_val)))
 
@@ -139,7 +145,7 @@ let chunk (total_read : int) (req : Http.Request.t) =
   | sz when sz > 0 ->
       let* extensions = chunk_exts <* crlf in
       let* data = take_bigstring sz <* crlf >>| Cstruct.of_bigarray in
-      return (Body.Chunk { data; length = sz; extensions })
+      return (Request.Chunk { data; length = sz; extensions })
   | 0 ->
       let* extensions = chunk_exts <* crlf in
       (* Read trailer headers if any and append those to request headers.
@@ -192,7 +198,7 @@ let chunk (total_read : int) (req : Http.Request.t) =
           (string_of_int total_read)
       in
       let updated_request = { req with headers = request_headers } in
-      return (Body.Last_chunk { extensions; updated_request })
+      return (Request.Last_chunk { extensions; updated_request })
   | sz -> fail (Format.sprintf "Invalid chunk size: %d" sz)
 
 let io_buffer_size = 65536 (* UNIX_BUFFER_SIZE 4.0.0 in bytes *)
@@ -229,8 +235,8 @@ let parse : 'a Angstrom.t -> #Eio.Flow.read -> Cstruct.t -> Cstruct.t * 'a =
 let rec read_chunk client_fd unconsumed total_read req f =
   let unconsumed, chunk = parse (chunk total_read req) client_fd unconsumed in
   match chunk with
-  | Body.Chunk x as c ->
+  | Request.Chunk x as c ->
       f c;
       let total_read = total_read + x.length in
       (read_chunk [@tailcall]) client_fd unconsumed total_read req f
-  | Body.Last_chunk _ as c -> f c
+  | Request.Last_chunk _ as c -> f c
