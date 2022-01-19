@@ -1,7 +1,7 @@
-type t = Http.Request.t
+include Http.Request
 
 type body = [ `String of Cstruct.t | `Chunked of read_chunk ]
-and read_chunk = t -> (chunk -> unit) -> unit
+and read_chunk = (chunk -> unit) -> [ `Ok | `Eof ]
 
 and chunk =
   | Chunk of {

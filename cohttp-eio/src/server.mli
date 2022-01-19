@@ -1,5 +1,3 @@
-type t
-
 module Client_connection : sig
   type t
 
@@ -10,14 +8,12 @@ module Client_connection : sig
   val oc : t -> Eio.Flow.write
 end
 
-type response =
-  [ `Response of Http.Response.t * Cstruct.t
-  | `Expert of Client_connection.t -> unit ]
+type t
+type request = Request.t * Request.body option
+type response = Http.Response.t * Cstruct.t option
+type handler = request -> response
+type middleware = handler -> handler
 
-type request_handler = Request.t * Request.body -> response
-
-val create :
-  ?socket_backlog:int -> ?domains:int -> port:int -> request_handler -> t
-
+val create : ?socket_backlog:int -> ?domains:int -> port:int -> handler -> t
 val run : t -> unit
 val close : t -> unit

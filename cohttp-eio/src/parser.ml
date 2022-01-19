@@ -232,11 +232,9 @@ let parse : 'a Angstrom.t -> #Eio.Flow.read -> Cstruct.t -> Cstruct.t * 'a =
   in
   loop (Buffered.parse p)
 
-let rec read_chunk client_fd unconsumed total_read req f =
-  let unconsumed, chunk = parse (chunk total_read req) client_fd unconsumed in
-  match chunk with
-  | Request.Chunk x as c ->
-      f c;
-      let total_read = total_read + x.length in
-      (read_chunk [@tailcall]) client_fd unconsumed total_read req f
-  | Request.Last_chunk _ as c -> f c
+let fixed_body content_length =
+  if content_length > 0 then
+    crlf
+    *> ( take_bigstring content_length >>| fun body ->
+         Some (`String (Cstruct.buffer body)) )
+  else crlf *> return None
