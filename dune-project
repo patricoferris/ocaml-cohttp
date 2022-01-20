@@ -234,14 +234,16 @@ online at https://hdrhistogram.github.io/HdrHistogram/plotFiles.html.")
 (package
  (name cohttp-eio)
  (synopsis "CoHTTP implementation with eio backend")
- (description "\
-This HTTP implementation uses the Cohttp portable implementation
-along with the eio threading library in order to provide a
-`Cohttp_eio.Server` module.")
+ (description "A CoHTTP server and client implementation based on `eio` library. `cohttp-eio`\
+              features a multicore capable HTTP 1.1 server. The library promotes and is built \
+              with direct style of coding as opposed to a monadic.")
  (depends
   (ocaml (>= 4.12.0+domains))
-  (fmt (>= 0.8.7))
+  eio
+  eio_main
   cstruct
   logs
-  eio
-  (http (= :version))))
+  (fmt (>= 0.8.7))
+  (http (= :version))
+  angstrom
+  faraday))
