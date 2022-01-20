@@ -99,7 +99,7 @@ let chunk_exts =
   let chunk_ext_val = quoted_string <|> token in
   many
     (lift2
-       (fun name value : Request.chunk_extension -> { name; value })
+       (fun name value : Body.chunk_extension -> { name; value })
        (char ';' *> chunk_ext_name)
        (optional (char '=' *> chunk_ext_val)))
 
@@ -145,7 +145,7 @@ let chunk (total_read : int) (req : Http.Request.t) =
   | sz when sz > 0 ->
       let* extensions = chunk_exts <* crlf in
       let* data = take_bigstring sz <* crlf >>| Cstruct.of_bigarray in
-      return (Request.Chunk { data; length = sz; extensions })
+      return @@ `Chunk (data, sz, extensions)
   | 0 ->
       let* extensions = chunk_exts <* crlf in
       (* Read trailer headers if any and append those to request headers.
@@ -198,7 +198,7 @@ let chunk (total_read : int) (req : Http.Request.t) =
           (string_of_int total_read)
       in
       let updated_request = { req with headers = request_headers } in
-      return (Request.Last_chunk { extensions; updated_request })
+      return @@ `Last_chunk (extensions, updated_request)
   | sz -> fail (Format.sprintf "Invalid chunk size: %d" sz)
 
 let io_buffer_size = 65536 (* UNIX_BUFFER_SIZE 4.0.0 in bytes *)

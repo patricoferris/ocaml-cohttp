@@ -1,2 +1,2 @@
-module Request = Request
+module Body = Body
 module Server = Server

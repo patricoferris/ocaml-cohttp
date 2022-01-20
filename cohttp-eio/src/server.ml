@@ -16,8 +16,8 @@ module Client_connection = struct
   let oc t = t.oc
 end
 
-type request = Request.t * Request.body option
-type response = Http.Response.t * Cstruct.t option
+type request = Http.Request.t * Http.Request.t Body.t option
+type response = Http.Response.t * unit Body.t option
 type handler = request -> response
 type middleware = handler -> handler
 
@@ -135,8 +135,8 @@ let write_response (client_conn : Client_connection.t) (res, _body) =
   Faraday.close faraday
 
 let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
-    (read_chunk_complete : bool ref) : Request.body option =
-  match (Request.has_body req, Request.encoding req) with
+    (read_chunk_complete : bool ref) =
+  match (Http.Request.has_body req, Http.Request.encoding req) with
   | `Yes, Http.Transfer.Chunked ->
       let total_read = ref 0 in
       let rec read_chunk f =
@@ -147,14 +147,14 @@ let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
           in
           unconsumed := u;
           match chunk with
-          | Request.Chunk x as c ->
-              f c;
-              total_read := !total_read + x.length;
+          | `Chunk (data, length, extensions) ->
+              f (Body.Chunk { data; length; extensions });
+              total_read := !total_read + length;
               (read_chunk [@tailcall]) f
-          | Request.Last_chunk _ as c ->
+          | `Last_chunk (extensions, updated_request) ->
               read_chunk_complete := true;
-              f c;
-              `Ok
+              f (Body.Last_chunk extensions);
+              `Ok updated_request
       in
       Some (`Chunked read_chunk)
   | `Yes, Http.Transfer.Fixed content_length ->

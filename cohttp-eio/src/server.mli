@@ -9,8 +9,8 @@ module Client_connection : sig
 end
 
 type t
-type request = Request.t * Request.body option
-type response = Http.Response.t * Cstruct.t option
+type request = Http.Request.t * Http.Request.t Body.t option
+type response = Http.Response.t * unit Body.t option
 type handler = request -> response
 type middleware = handler -> handler
 
