@@ -53,7 +53,86 @@ let cpu_core_count =
   | (exception Unix.Unix_error (_, _, _)) ->
       1
 
-let write_response (_client_conn : Client_connection.t) (_res, _body) = ()
+(** [to_rfc1123 t] converts [t] to a string in a format as defined by RFC 1123. *)
+let datetime_to_string (tm : Unix.tm) =
+  let weekday =
+    match tm.tm_wday with
+    | 0 -> "Sun"
+    | 1 -> "Mon"
+    | 2 -> "Tue"
+    | 3 -> "Wed"
+    | 4 -> "Thu"
+    | 5 -> "Fri"
+    | 6 -> "Sat"
+    | 7 -> "Sun"
+    | _ -> assert false
+  in
+  let month =
+    match tm.tm_mon with
+    | 0 -> "Jan"
+    | 1 -> "Feb"
+    | 2 -> "Mar"
+    | 3 -> "Apr"
+    | 4 -> "May"
+    | 5 -> "Jun"
+    | 6 -> "Jul"
+    | 7 -> "Aug"
+    | 8 -> "Sep"
+    | 9 -> "Oct"
+    | 10 -> "Nov"
+    | 11 -> "Dec"
+    | _ -> assert false
+  in
+  Format.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT" weekday tm.tm_mday month
+    (1900 + tm.tm_year) tm.tm_hour tm.tm_min tm.tm_sec
+
+let write (client_conn : Client_connection.t) faraday =
+  Eio.Std.Fibre.fork ~sw:client_conn.switch (fun () ->
+      let continue = ref true in
+      while !continue do
+        match Faraday.operation faraday with
+        | `Writev iovecs ->
+            let iovecs =
+              List.map
+                (fun { Faraday.buffer; off; len } ->
+                  Cstruct.of_bigarray ~off ~len buffer)
+                iovecs
+            in
+            let source = Eio.Flow.cstruct_source iovecs in
+            Eio.Flow.copy source client_conn.oc
+        | `Yield -> Faraday.yield faraday
+        | `Close -> continue := false
+      done)
+
+let write_response (client_conn : Client_connection.t) (res, _body) =
+  let faraday = Faraday.create Parser.io_buffer_size in
+  write client_conn faraday;
+  let status_line =
+    let version = Http.Response.version res |> Http.Version.to_string in
+    let status = Http.Response.status res |> Http.Status.to_int in
+    let status_phrase = Http.Status.reason_phrase_of_code status in
+    Printf.sprintf "%s %d %s\r\n" version status status_phrase
+  in
+  Faraday.write_string faraday status_line;
+  let headers = Http.Response.headers res in
+  let headers =
+    (*--- Don't cache set-cookie headers in browsers and proxies. ---*)
+    if Http.Header.mem headers "Set-Cookie" then
+      Http.Header.add headers "Cache-Control" {|no-cache="Set-Cookie"|}
+    else headers
+  in
+  let headers =
+    let date = Unix.time () |> Unix.gmtime in
+    Http.Header.add_unless_exists headers "Date" (datetime_to_string date)
+  in
+  let headers = Http.Header.clean_dup headers in
+  Http.Header.iter
+    (fun name v ->
+      let hdr = Printf.sprintf "%s: %s\r\n" name v in
+      Faraday.write_string faraday hdr)
+    headers;
+  Faraday.write_string faraday "\r\n";
+  Faraday.close faraday
 
 let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
     (read_chunk_complete : bool ref) : Request.body option =
@@ -107,7 +186,7 @@ let rec handle_request (t : t) (conn : Client_connection.t)
       write_response conn (res, res_body);
       if not keep_alive then Client_connection.close conn
       else (
-        (* +++ drain unread bytes from client connection +++ *)
+        (*--- drain unread bytes from client connection ---*)
         (match req_body with
         | Some (`Chunked f) ->
             if not !read_chunk_complete then ignore (f ignore)
