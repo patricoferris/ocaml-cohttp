@@ -104,7 +104,9 @@ let write (client_conn : Client_connection.t) faraday =
         | `Close -> continue := false
       done)
 
-let write_response (client_conn : Client_connection.t) (res, _body) =
+let write_chunked (_read_chunk : unit Body.read_chunk) = ()
+
+let write_response (client_conn : Client_connection.t) (res, body) =
   let faraday = Faraday.create Parser.io_buffer_size in
   write client_conn faraday;
   let status_line =
@@ -117,9 +119,18 @@ let write_response (client_conn : Client_connection.t) (res, _body) =
   let headers = Http.Response.headers res in
   let headers =
     (*--- Don't cache set-cookie headers in browsers and proxies. ---*)
-    if Http.Header.mem headers "Set-Cookie" then
+    if Http.Header.mem headers "set-cookie" then
       Http.Header.add headers "Cache-Control" {|no-cache="Set-Cookie"|}
     else headers
+  in
+  let headers =
+    let hdr = "content-length" in
+    match body with
+    | Some (`String cs) ->
+        Http.Header.add_unless_exists headers hdr
+          (string_of_int @@ Cstruct.length cs)
+    | Some (`Chunked _) -> Http.Header.remove headers hdr
+    | None -> Http.Header.add_unless_exists headers hdr "0"
   in
   let headers =
     let date = Unix.time () |> Unix.gmtime in
@@ -132,6 +143,12 @@ let write_response (client_conn : Client_connection.t) (res, _body) =
       Faraday.write_string faraday hdr)
     headers;
   Faraday.write_string faraday "\r\n";
+  (match body with
+  | Some (`String (cs : Cstruct.t)) ->
+      Faraday.write_bigstring faraday ~off:cs.off ~len:cs.len
+        (Cstruct.to_bigarray cs)
+  | Some (`Chunked read_chunk) -> write_chunked read_chunk
+  | None -> ());
   Faraday.close faraday
 
 let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
