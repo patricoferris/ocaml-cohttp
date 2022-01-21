@@ -9,15 +9,14 @@ module Client_connection = struct
     oc : Eio.Flow.write;
   }
 
-  let client_addr t = t.addr
-  let switch t = t.switch
   let close t = Eio.Flow.close t.flow
-  let ic t = t.ic
-  let oc t = t.oc
 end
 
 type request = Http.Request.t * Http.Request.t Body.t option
-type response = Http.Response.t * unit Body.t option
+
+type response = Http.Response.t * response_body
+and response_body = [ unit Body.t | `Custom of Faraday.t -> unit ] option
+
 type handler = request -> response
 type middleware = handler -> handler
 
@@ -86,9 +85,10 @@ let datetime_to_string (tm : Unix.tm) =
   Format.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT" weekday tm.tm_mday month
     (1900 + tm.tm_year) tm.tm_hour tm.tm_min tm.tm_sec
 
-let write_chunked (_read_chunk : unit Body.read_chunk) = ()
+let write_chunked _read_chunk = ()
 
-let write_response (client_conn : Client_connection.t) (res, body) =
+let write_response (client_conn : Client_connection.t)
+    (res, (body : response_body)) =
   let faraday = Faraday.create Parser.io_buffer_size in
   let serialize () =
     let status_line =
@@ -112,6 +112,7 @@ let write_response (client_conn : Client_connection.t) (res, body) =
           Http.Header.add_unless_exists headers hdr
             (string_of_int @@ Cstruct.length cs)
       | Some (`Chunked _) -> Http.Header.remove headers hdr
+      | Some (`Custom _) -> headers
       | None -> Http.Header.add_unless_exists headers hdr "0"
     in
     let headers =
@@ -129,9 +130,10 @@ let write_response (client_conn : Client_connection.t) (res, body) =
     | Some (`String (cs : Cstruct.t)) ->
         Faraday.write_bigstring faraday ~off:cs.off ~len:cs.len
           (Cstruct.to_bigarray cs)
+    | Some (`Custom f) -> f faraday
     | Some (`Chunked read_chunk) -> write_chunked read_chunk
     | None -> ());
-    Faraday.close faraday
+    if not (Faraday.is_closed faraday) then Faraday.close faraday
   in
   let rec write () =
     match Faraday.operation faraday with
