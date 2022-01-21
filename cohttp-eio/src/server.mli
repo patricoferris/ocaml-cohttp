@@ -3,7 +3,6 @@ module Client_connection : sig
 
   val client_addr : t -> Eio.Net.Sockaddr.t
   val switch : t -> Eio.Std.Switch.t
-  val close : t -> unit
   val ic : t -> Eio.Flow.read
   val oc : t -> Eio.Flow.write
 end

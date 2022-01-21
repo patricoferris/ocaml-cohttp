@@ -90,7 +90,7 @@ let write_chunked (_read_chunk : unit Body.read_chunk) = ()
 
 let write_response (client_conn : Client_connection.t) (res, body) =
   let faraday = Faraday.create Parser.io_buffer_size in
-  let serialize_response () =
+  let serialize () =
     let status_line =
       let version = Http.Response.version res |> Http.Version.to_string in
       let status = Http.Response.status res |> Http.Status.to_int in
@@ -150,7 +150,7 @@ let write_response (client_conn : Client_connection.t) (res, body) =
         (write [@tailcall]) ()
     | `Close -> ()
   in
-  Eio.Std.Fibre.both serialize_response write
+  Eio.Std.Fibre.both serialize write
 
 let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
     (read_chunk_complete : bool ref) =
