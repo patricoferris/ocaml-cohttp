@@ -86,70 +86,71 @@ let datetime_to_string (tm : Unix.tm) =
   Format.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT" weekday tm.tm_mday month
     (1900 + tm.tm_year) tm.tm_hour tm.tm_min tm.tm_sec
 
-let write (client_conn : Client_connection.t) faraday =
-  Eio.Std.Fibre.fork ~sw:client_conn.switch (fun () ->
-      let continue = ref true in
-      while !continue do
-        match Faraday.operation faraday with
-        | `Writev iovecs ->
-            let iovecs =
-              List.map
-                (fun { Faraday.buffer; off; len } ->
-                  Cstruct.of_bigarray ~off ~len buffer)
-                iovecs
-            in
-            let source = Eio.Flow.cstruct_source iovecs in
-            Eio.Flow.copy source client_conn.oc
-        | `Yield -> Faraday.yield faraday
-        | `Close -> continue := false
-      done)
-
 let write_chunked (_read_chunk : unit Body.read_chunk) = ()
 
 let write_response (client_conn : Client_connection.t) (res, body) =
   let faraday = Faraday.create Parser.io_buffer_size in
-  write client_conn faraday;
-  let status_line =
-    let version = Http.Response.version res |> Http.Version.to_string in
-    let status = Http.Response.status res |> Http.Status.to_int in
-    let status_phrase = Http.Status.reason_phrase_of_code status in
-    Printf.sprintf "%s %d %s\r\n" version status status_phrase
+  let serialize_response () =
+    let status_line =
+      let version = Http.Response.version res |> Http.Version.to_string in
+      let status = Http.Response.status res |> Http.Status.to_int in
+      let status_phrase = Http.Status.reason_phrase_of_code status in
+      Printf.sprintf "%s %d %s\r\n" version status status_phrase
+    in
+    Faraday.write_string faraday status_line;
+    let headers = Http.Response.headers res in
+    let headers =
+      (*--- Don't cache set-cookie headers in browsers and proxies. ---*)
+      if Http.Header.mem headers "set-cookie" then
+        Http.Header.add headers "Cache-Control" {|no-cache="Set-Cookie"|}
+      else headers
+    in
+    let headers =
+      let hdr = "content-length" in
+      match body with
+      | Some (`String cs) ->
+          Http.Header.add_unless_exists headers hdr
+            (string_of_int @@ Cstruct.length cs)
+      | Some (`Chunked _) -> Http.Header.remove headers hdr
+      | None -> Http.Header.add_unless_exists headers hdr "0"
+    in
+    let headers =
+      let date = Unix.time () |> Unix.gmtime in
+      Http.Header.add_unless_exists headers "Date" (datetime_to_string date)
+    in
+    let headers = Http.Header.clean_dup headers in
+    Http.Header.iter
+      (fun name v ->
+        let hdr = Printf.sprintf "%s: %s\r\n" name v in
+        Faraday.write_string faraday hdr)
+      headers;
+    Faraday.write_string faraday "\r\n";
+    (match body with
+    | Some (`String (cs : Cstruct.t)) ->
+        Faraday.write_bigstring faraday ~off:cs.off ~len:cs.len
+          (Cstruct.to_bigarray cs)
+    | Some (`Chunked read_chunk) -> write_chunked read_chunk
+    | None -> ());
+    Faraday.close faraday
   in
-  Faraday.write_string faraday status_line;
-  let headers = Http.Response.headers res in
-  let headers =
-    (*--- Don't cache set-cookie headers in browsers and proxies. ---*)
-    if Http.Header.mem headers "set-cookie" then
-      Http.Header.add headers "Cache-Control" {|no-cache="Set-Cookie"|}
-    else headers
+  let rec write () =
+    match Faraday.operation faraday with
+    | `Writev iovecs ->
+        let iovecs =
+          List.map
+            (fun { Faraday.buffer; off; len } ->
+              Cstruct.of_bigarray ~off ~len buffer)
+            iovecs
+        in
+        let source = Eio.Flow.cstruct_source iovecs in
+        Eio.Flow.copy source client_conn.oc;
+        (write [@tailcall]) ()
+    | `Yield ->
+        Eio.Std.Fibre.yield ();
+        (write [@tailcall]) ()
+    | `Close -> ()
   in
-  let headers =
-    let hdr = "content-length" in
-    match body with
-    | Some (`String cs) ->
-        Http.Header.add_unless_exists headers hdr
-          (string_of_int @@ Cstruct.length cs)
-    | Some (`Chunked _) -> Http.Header.remove headers hdr
-    | None -> Http.Header.add_unless_exists headers hdr "0"
-  in
-  let headers =
-    let date = Unix.time () |> Unix.gmtime in
-    Http.Header.add_unless_exists headers "Date" (datetime_to_string date)
-  in
-  let headers = Http.Header.clean_dup headers in
-  Http.Header.iter
-    (fun name v ->
-      let hdr = Printf.sprintf "%s: %s\r\n" name v in
-      Faraday.write_string faraday hdr)
-    headers;
-  Faraday.write_string faraday "\r\n";
-  (match body with
-  | Some (`String (cs : Cstruct.t)) ->
-      Faraday.write_bigstring faraday ~off:cs.off ~len:cs.len
-        (Cstruct.to_bigarray cs)
-  | Some (`Chunked read_chunk) -> write_chunked read_chunk
-  | None -> ());
-  Faraday.close faraday
+  Eio.Std.Fibre.both serialize_response write
 
 let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
     (read_chunk_complete : bool ref) =
