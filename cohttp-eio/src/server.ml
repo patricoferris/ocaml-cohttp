@@ -181,7 +181,10 @@ let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
       in
       unconsumed := u;
       body
-  | _, _ -> None
+  | _, _ ->
+      let u, _ = Parser.(parse crlf conn.ic !unconsumed) in
+      unconsumed := u;
+      None
 
 let rec handle_request (t : t) (conn : Client_connection.t)
     (unconsumed : Cstruct.t ref) : unit =
