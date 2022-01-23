@@ -201,40 +201,30 @@ let chunk (total_read : int) (req : Http.Request.t) =
       return @@ `Last_chunk (extensions, updated_request)
   | sz -> fail (Format.sprintf "Invalid chunk size: %d" sz)
 
-let io_buffer_size = 65536 (* UNIX_BUFFER_SIZE 4.0.0 in bytes *)
-
-exception Parse_error of string
-
-let parse : 'a Angstrom.t -> #Eio.Flow.read -> Cstruct.t -> Cstruct.t * 'a =
- fun p client_fd unconsumed ->
-  let rec loop = function
-    | Buffered.Partial k -> (
-        let unconsumed_length = Cstruct.length unconsumed in
-        if unconsumed_length > 0 then
-          loop @@ k (`Bigstring (Cstruct.to_bigarray unconsumed))
-        else
-          let buf = Cstruct.create io_buffer_size in
-          match Eio.Flow.read_into client_fd buf with
-          | got ->
-              let buf =
-                (if got != io_buffer_size then Cstruct.sub buf 0 got else buf)
-                |> Cstruct.to_bigarray
-              in
-              loop (k (`Bigstring buf))
-          | exception End_of_file -> loop (k `Eof))
-    | Buffered.Done ({ off; len; buf }, x) ->
-        let unconsumed =
-          if len > 0 then Cstruct.of_bigarray ~off ~len buf else Cstruct.empty
-        in
-        (unconsumed, x)
-    | Buffered.Fail (_, marks, err) ->
-        raise (Parse_error (String.concat " > " marks ^ ": " ^ err))
-  in
-  loop (Buffered.parse p)
-
 let fixed_body content_length =
   if content_length > 0 then
     crlf
     *> ( take_bigstring content_length >>| fun body ->
          Some (`String (Cstruct.buffer body)) )
   else crlf *> return None
+
+exception Parse_error of string
+
+let parse : 'a Angstrom.t -> In_channel.t -> 'a =
+ fun p ic ->
+  let rec loop = function
+    | Unbuffered.Partial k ->
+        In_channel.shift ic k.committed;
+        let buf, off, len = In_channel.feed_input ic in
+        let more =
+          if len = 0 then Unbuffered.Complete else Unbuffered.Incomplete
+        in
+        loop (k.continue buf ~off ~len more)
+    | Unbuffered.Done (len, a) ->
+        In_channel.shift ic len;
+        a
+    | Unbuffered.Fail (len, marks, err) ->
+        In_channel.shift ic len;
+        raise (Parse_error (String.concat " > " marks ^ ": " ^ err))
+  in
+  loop (Unbuffered.parse p)

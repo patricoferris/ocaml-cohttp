@@ -49,14 +49,14 @@ let feed_input t =
   match Eio.Flow.read_into t.ic buf with
   | got ->
       t.len <- t.len + got;
-      got
-  | exception End_of_file -> 0
+      (t.buf, t.off, t.len)
+  | exception End_of_file -> (t.buf, t.off, 0)
 
 let ensure_input t len =
   if t.len < len then
     let continue = ref true in
     while !continue do
-      let got = feed_input t in
+      let _, _, got = feed_input t in
       continue := if got > 0 && t.len < len then true else false
     done
 

@@ -2,6 +2,11 @@ type t
 
 val create : ?bufsize:int -> #Eio.Flow.read -> t
 val default_io_buffer_size : int
+val shift : t -> int -> unit
+val feed_input : t -> Bigstringaf.t * int * int
+
+(** {2 High Level API} *)
+
 val read_into : t -> off:int -> len:int -> Bigstringaf.t -> int
 
 val read_char : t -> char

@@ -5,7 +5,7 @@ module Client_connection = struct
     flow : < Eio.Flow.two_way ; Eio.Flow.close >;
     switch : Eio.Std.Switch.t;
     addr : Eio.Net.Sockaddr.t;
-    ic : Eio.Flow.read;
+    ic : In_channel.t;
     oc : Eio.Flow.write;
   }
 
@@ -89,7 +89,7 @@ let write_chunked _read_chunk = ()
 
 let write_response (client_conn : Client_connection.t)
     (res, (body : response_body)) =
-  let faraday = Faraday.create Parser.io_buffer_size in
+  let faraday = Faraday.create In_channel.default_io_buffer_size in
   let serialize () =
     let status_line =
       let version = Http.Response.version res |> Http.Version.to_string in
@@ -154,7 +154,7 @@ let write_response (client_conn : Client_connection.t)
   in
   Eio.Std.Fibre.both serialize write
 
-let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
+let request_body (conn : Client_connection.t) req
     (read_chunk_complete : bool ref) =
   match (Http.Request.has_body req, Http.Request.encoding req) with
   | `Yes, Http.Transfer.Chunked ->
@@ -162,10 +162,7 @@ let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
       let rec read_chunk f =
         if !read_chunk_complete then `Eof
         else
-          let u, chunk =
-            Parser.(parse (chunk !total_read req) conn.ic !unconsumed)
-          in
-          unconsumed := u;
+          let chunk = Parser.(parse (chunk !total_read req) conn.ic) in
           match chunk with
           | `Chunk (data, length, extensions) ->
               f (Body.Chunk { data; length; extensions });
@@ -179,24 +176,18 @@ let request_body (conn : Client_connection.t) req (unconsumed : Cstruct.t ref)
       Some (`Chunked read_chunk)
   | `Yes, Http.Transfer.Fixed content_length ->
       let content_length = Int64.to_int content_length in
-      let u, body =
-        Parser.(parse (fixed_body content_length) conn.ic !unconsumed)
-      in
-      unconsumed := u;
+      let body = Parser.(parse (fixed_body content_length) conn.ic) in
       body
   | _, _ ->
-      let u, _ = Parser.(parse crlf conn.ic !unconsumed) in
-      unconsumed := u;
+      let crlf = Angstrom.(Parser.crlf *> return ()) in
+      let () = Parser.parse crlf conn.ic in
       None
 
-let rec handle_request (t : t) (conn : Client_connection.t)
-    (unconsumed : Cstruct.t ref) : unit =
-  let open Parser in
-  match parse request conn.ic !unconsumed with
-  | u, req ->
-      unconsumed := u;
+let rec handle_request (t : t) (conn : Client_connection.t) : unit =
+  match Parser.(parse request conn.ic) with
+  | req ->
       let read_chunk_complete = ref false in
-      let req_body = request_body conn req unconsumed read_chunk_complete in
+      let req_body = request_body conn req read_chunk_complete in
       let res, res_body = t.request_handler (req, req_body) in
       let keep_alive = Http.Request.is_keep_alive req in
       let response_headers =
@@ -214,9 +205,9 @@ let rec handle_request (t : t) (conn : Client_connection.t)
         | Some (`Chunked f) ->
             if not !read_chunk_complete then ignore (f ignore)
         | Some _ | None -> ());
-        (handle_request [@tailcall]) t conn unconsumed)
-  | exception Eof -> Client_connection.close conn
-  | exception Parse_error msg ->
+        (handle_request [@tailcall]) t conn)
+  | exception Parser.Eof -> Client_connection.close conn
+  | exception Parser.Parse_error msg ->
       Printf.eprintf "Request parsing error: %s" msg;
       let res = Http.Response.make ~version:`HTTP_1_1 ~status:`Bad_request () in
       write_response conn (res, None)
@@ -239,18 +230,16 @@ let run_accept_loop (t : t) sw env =
       (Printexc.to_string exn)
   in
   while not (Atomic.get t.closed) do
-    Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error (fun ~sw flow addr ->
-        let conn =
-          Client_connection.
-            {
-              flow;
-              addr;
-              switch = sw;
-              ic = (flow :> Eio.Flow.read);
-              oc = (flow :> Eio.Flow.write);
-            }
-        in
-        handle_request t conn (ref Cstruct.empty))
+    Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
+    @@ fun ~sw flow addr ->
+    handle_request t
+      {
+        Client_connection.flow;
+        addr;
+        switch = sw;
+        ic = In_channel.create (flow :> Eio.Flow.read);
+        oc = (flow :> Eio.Flow.write);
+      }
   done
 
 let create ?(socket_backlog = 10_000) ?(domains = cpu_core_count) ~port
