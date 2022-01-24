@@ -5,17 +5,24 @@ module Client_connection = struct
     flow : < Eio.Flow.two_way ; Eio.Flow.close >;
     switch : Eio.Std.Switch.t;
     addr : Eio.Net.Sockaddr.t;
-    ic : In_channel.t;
+    ic : Reader.t;
     oc : Eio.Flow.write;
   }
 
   let close t = Eio.Flow.close t.flow
 end
 
-type request = Http.Request.t * Http.Request.t Body.t option
+module type Request_body_reader = sig
+  val read_fixed : unit -> (Cstruct.t, string) result
+  val read_chunk : (Body.chunk -> unit) -> (Http.Request.t, string) result
+  val reader : Reader.t
+  val set_read_complete : unit -> unit
+end
 
-type response = Http.Response.t * response_body
-and response_body = [ unit Body.t | `Custom of Faraday.t -> unit ] option
+type request = Http.Request.t * (module Request_body_reader)
+
+type response = (Http.Response.t * response_body) option
+and response_body = [ unit Body.t | `Custom of Faraday.t -> unit ]
 
 type handler = request -> response
 type middleware = handler -> handler
@@ -89,7 +96,7 @@ let write_chunked _read_chunk = ()
 
 let write_response (client_conn : Client_connection.t)
     (res, (body : response_body)) =
-  let faraday = Faraday.create In_channel.default_io_buffer_size in
+  let faraday = Faraday.create Reader.default_io_buffer_size in
   let serialize () =
     let status_line =
       let version = Http.Response.version res |> Http.Version.to_string in
@@ -108,12 +115,12 @@ let write_response (client_conn : Client_connection.t)
     let headers =
       let hdr = "content-length" in
       match body with
-      | Some (`String cs) ->
+      | `String cs ->
           Http.Header.add_unless_exists headers hdr
             (string_of_int @@ Cstruct.length cs)
-      | Some (`Chunked _) -> Http.Header.remove headers hdr
-      | Some (`Custom _) -> headers
-      | None -> Http.Header.add_unless_exists headers hdr "0"
+      | `Chunked _ -> Http.Header.remove headers hdr
+      | `Custom _ -> headers
+      | `None -> Http.Header.add_unless_exists headers hdr "0"
     in
     let headers =
       let date = Unix.time () |> Unix.gmtime in
@@ -127,12 +134,12 @@ let write_response (client_conn : Client_connection.t)
       headers;
     Faraday.write_string faraday "\r\n";
     (match body with
-    | Some (`String (cs : Cstruct.t)) ->
+    | `String (cs : Cstruct.t) ->
         Faraday.write_bigstring faraday ~off:cs.off ~len:cs.len
           (Cstruct.to_bigarray cs)
-    | Some (`Custom f) -> f faraday
-    | Some (`Chunked read_chunk) -> write_chunked read_chunk
-    | None -> ());
+    | `Custom f -> f faraday
+    | `Chunked read_chunk -> write_chunked read_chunk
+    | `None -> ());
     if not (Faraday.is_closed faraday) then Faraday.close faraday
   in
   let rec write () =
@@ -154,73 +161,106 @@ let write_response (client_conn : Client_connection.t)
   in
   Eio.Std.Fibre.both serialize write
 
-let request_body (conn : Client_connection.t) req
-    (read_chunk_complete : bool ref) =
-  match (Http.Request.has_body req, Http.Request.encoding req) with
-  | `Yes, Http.Transfer.Chunked ->
-      let total_read = ref 0 in
-      let rec read_chunk f =
-        if !read_chunk_complete then `Eof
-        else
-          let chunk = Parser.(parse (chunk !total_read req) conn.ic) in
-          match chunk with
-          | `Chunk (data, length, extensions) ->
-              f (Body.Chunk { data; length; extensions });
-              total_read := !total_read + length;
-              (read_chunk [@tailcall]) f
-          | `Last_chunk (extensions, updated_request) ->
-              read_chunk_complete := true;
-              f (Body.Last_chunk extensions);
-              `Ok updated_request
-      in
-      Some (`Chunked read_chunk)
-  | `Yes, Http.Transfer.Fixed content_length ->
-      let content_length = Int64.to_int content_length in
-      let body = Parser.(parse (fixed_body content_length) conn.ic) in
-      body
-  | _, _ ->
-      let crlf = Angstrom.(Parser.crlf *> return ()) in
-      let () = Parser.parse crlf conn.ic in
-      None
+let make_request_body_reader (conn : Client_connection.t) (req : Http.Request.t)
+    (read_complete : bool ref) =
+  let module M = struct
+    let reader = conn.ic
+
+    let read_fixed =
+      match Http.Header.get_transfer_encoding req.headers with
+      | Http.Transfer.Fixed content_length -> (
+          fun () ->
+            if !read_complete then Error "End of file"
+            else
+              let content_length = Int64.to_int content_length in
+              try Ok Parser.(parse (fixed_body content_length) conn.ic)
+              with e -> Error (Printexc.to_string e))
+      | _ -> fun () -> Error "Request is not a fixed content body"
+
+    let total_read = ref 0
+
+    let read_chunk =
+      match Http.Header.get_transfer_encoding req.headers with
+      | Http.Transfer.Chunked ->
+          let rec chunk_loop f =
+            if !read_complete then Error "End of file"
+            else
+              let chunk = Parser.(parse (chunk !total_read req) conn.ic) in
+              match chunk with
+              | `Chunk (data, length, extensions) ->
+                  f (Body.Chunk { data; length; extensions });
+                  total_read := !total_read + length;
+                  (chunk_loop [@tailcall]) f
+              | `Last_chunk (extensions, updated_request) ->
+                  read_complete := true;
+                  f (Body.Last_chunk extensions);
+                  Ok updated_request
+          in
+          chunk_loop
+      | _ -> fun _ -> Error "Request is not a chunked request"
+
+    let set_read_complete () = read_complete := true
+  end in
+  (module M : Request_body_reader)
+
+let make_v1_1_response ?headers ?(status = `OK) body : response =
+  let res = Http.Response.make ?headers ~version:`HTTP_1_1 ~status () in
+  Some (res, body)
+
+let internal_server_error conn =
+  let res =
+    Http.Response.make ~version:`HTTP_1_1 ~status:`Internal_server_error ()
+  in
+  write_response conn (res, `None)
 
 let rec handle_request (t : t) (conn : Client_connection.t) : unit =
   match Parser.(parse request conn.ic) with
-  | req ->
-      let read_chunk_complete = ref false in
-      let req_body = request_body conn req read_chunk_complete in
-      let res, res_body = t.request_handler (req, req_body) in
-      let keep_alive = Http.Request.is_keep_alive req in
-      let response_headers =
-        Http.Header.add_unless_exists
-          (Http.Response.headers res)
-          "connection"
-          (if keep_alive then "keep-alive" else "close")
-      in
-      let res = { res with headers = response_headers } in
-      write_response conn (res, res_body);
-      if not keep_alive then Client_connection.close conn
-      else (
-        (*--- drain unread bytes from client connection ---*)
-        (match req_body with
-        | Some (`Chunked f) ->
-            if not !read_chunk_complete then ignore (f ignore)
-        | Some _ | None -> ());
-        (handle_request [@tailcall]) t conn)
+  | req -> (
+      let read_complete = ref false in
+      let req_body_reader = make_request_body_reader conn req read_complete in
+      match t.request_handler (req, req_body_reader) with
+      | Some (res, res_body) -> (
+          let keep_alive = Http.Request.is_keep_alive req in
+          let response_headers =
+            Http.Header.add_unless_exists
+              (Http.Response.headers res)
+              "connection"
+              (if keep_alive then "keep-alive" else "close")
+          in
+          let res = { res with headers = response_headers } in
+          write_response conn (res, res_body);
+          match keep_alive with
+          | false -> Client_connection.close conn
+          | true ->
+              (* Drain unread bytes from client connection before
+                 reading another request. *)
+              if not !read_complete then
+                let module Request_body_reader = (val req_body_reader
+                                                    : Request_body_reader)
+                in
+                match Http.Header.get_transfer_encoding req.headers with
+                | Http.Transfer.Fixed _ ->
+                    ignore @@ Request_body_reader.read_fixed ()
+                | Http.Transfer.Chunked ->
+                    ignore @@ Request_body_reader.read_chunk ignore
+                | _ -> ()
+              else ();
+              (handle_request [@tailcall]) t conn)
+      | None ->
+          Printf.eprintf "Request not handled%!";
+          internal_server_error conn)
   | exception Parser.Eof -> Client_connection.close conn
   | exception Parser.Parse_error msg ->
       Printf.eprintf "Request parsing error: %s" msg;
       let res = Http.Response.make ~version:`HTTP_1_1 ~status:`Bad_request () in
-      write_response conn (res, None)
+      write_response conn (res, `None)
   | exception exn ->
       Printf.eprintf "Unhandled exception: %s" (Printexc.to_string exn);
-      let res =
-        Http.Response.make ~version:`HTTP_1_1 ~status:`Internal_server_error ()
-      in
-      write_response conn (res, None)
+      internal_server_error conn
 
 let run_accept_loop (t : t) sw env =
   let net = Eio.Stdenv.net env in
-  let sockaddr = `Tcp (Unix.inet_addr_loopback, t.port) in
+  let sockaddr = `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port) in
   let ssock =
     Eio.Net.listen ~reuse_addr:true ~reuse_port:true ~backlog:t.socket_backlog
       ~sw net sockaddr
@@ -237,7 +277,7 @@ let run_accept_loop (t : t) sw env =
         Client_connection.flow;
         addr;
         switch = sw;
-        ic = In_channel.create (flow :> Eio.Flow.read);
+        ic = Reader.create (flow :> Eio.Flow.read);
         oc = (flow :> Eio.Flow.write);
       }
   done
@@ -257,3 +297,32 @@ let run (t : t) =
     Fibre.fork ~sw @@ fun () ->
     Eio.Domain_manager.run domain_mgr @@ fun () -> run_accept_loop t sw env
   done
+
+(* Basic Response *)
+
+let text body =
+  let headers =
+    Http.Header.init_with "content-type" "text/plain; charset=UTF-8"
+  in
+  let body = Cstruct.of_string body in
+  make_v1_1_response ~headers (`String body)
+
+let html body =
+  let headers =
+    Http.Header.init_with "content-type" "text/html; charset=UTF-8"
+  in
+  let body = Cstruct.of_string body in
+  make_v1_1_response ~headers (`String body)
+
+(* Basic handlers *)
+
+let not_found : handler =
+ fun (_ : request) -> make_v1_1_response ~status:`Not_found `None
+
+(* Handler combinators *)
+
+let join h1 h2 req = match h1 req with Some _ as res -> res | None -> h2 req
+
+module Infix = struct
+  let ( >>? ) = join
+end

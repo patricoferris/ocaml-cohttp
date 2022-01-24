@@ -38,7 +38,7 @@ let headers =
     in
     (header_name, header_value)
   in
-  many header_field <* commit >>| Http.Header.of_list_rev
+  many header_field <* crlf <* commit >>| Http.Header.of_list_rev
 
 exception Eof
 
@@ -156,7 +156,7 @@ let chunk (total_read : int) (req : Http.Request.t) =
          The spec at https://datatracker.ietf.org/doc/html/rfc7230#section-4.1.3
          specifies that 'Content-Length' and 'Transfer-Encoding' headers must be
          updated. *)
-      let* trailer_headers = headers <* crlf <* commit in
+      let* trailer_headers = headers <* commit in
       let request_trailer_headers = request_trailer_headers req in
       let request_headers = Http.Request.headers req in
       let trailer_headers =
@@ -203,28 +203,26 @@ let chunk (total_read : int) (req : Http.Request.t) =
 
 let fixed_body content_length =
   if content_length > 0 then
-    crlf
-    *> ( take_bigstring content_length >>| fun body ->
-         Some (`String (Cstruct.buffer body)) )
-  else crlf *> return None
+    crlf *> (take_bigstring content_length >>| fun body -> Cstruct.buffer body)
+  else crlf *> return Cstruct.empty
 
 exception Parse_error of string
 
-let parse : 'a Angstrom.t -> In_channel.t -> 'a =
- fun p ic ->
+let parse : 'a Angstrom.t -> Reader.t -> 'a =
+ fun p reader ->
   let rec loop = function
     | Unbuffered.Partial k ->
-        In_channel.shift ic k.committed;
-        let buf, off, len = In_channel.feed_input ic in
+        Reader.consume reader k.committed;
+        let buf, off, len = Reader.feed_input reader in
         let more =
           if len = 0 then Unbuffered.Complete else Unbuffered.Incomplete
         in
         loop (k.continue buf ~off ~len more)
     | Unbuffered.Done (len, a) ->
-        In_channel.shift ic len;
+        Reader.consume reader len;
         a
     | Unbuffered.Fail (len, marks, err) ->
-        In_channel.shift ic len;
+        Reader.consume reader len;
         raise (Parse_error (String.concat " > " marks ^ ": " ^ err))
   in
   loop (Unbuffered.parse p)

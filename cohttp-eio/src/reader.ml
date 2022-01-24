@@ -3,20 +3,26 @@ type t = {
   mutable buf : Bigstringaf.t;
   mutable off : int;
   mutable len : int;
-  ic : Eio.Flow.read;
-  bufsize : int;
+  reader : Eio.Flow.read;
+  buffer_size : int;
 }
+
+type offset = int
+type length = int
 
 let default_io_buffer_size = 4096
 let writable_space t = Bigstringaf.length t.buf - t.len
 let trailing_space t = Bigstringaf.length t.buf - (t.off + t.len)
 let write_pos t = t.off + t.len
 
-let create ?(bufsize = default_io_buffer_size) flow =
-  let buf = Bigstringaf.create bufsize in
+let create ?(buffer_size = default_io_buffer_size) reader =
+  let buf = Bigstringaf.create buffer_size in
   let off = 0 in
   let len = 0 in
-  { buf; off; len; ic = (flow :> Eio.Flow.read); bufsize }
+  { buf; off; len; reader = (reader :> Eio.Flow.read); buffer_size }
+
+let reader t = t.reader
+let buffer_size t = t.buffer_size
 
 let compress t =
   Bigstringaf.unsafe_blit t.buf ~src_off:t.off t.buf ~dst_off:0 ~len:t.len;
@@ -38,15 +44,15 @@ let ensure t to_copy =
   if trailing_space t < to_copy then
     if writable_space t >= to_copy then compress t else grow t to_copy
 
-let shift t n =
+let consume t n =
   assert (t.len >= n);
   t.off <- t.off + n;
   t.len <- t.len - n
 
 let feed_input t =
-  ensure t t.bufsize;
-  let buf = Cstruct.of_bigarray ~off:(write_pos t) ~len:t.bufsize t.buf in
-  match Eio.Flow.read_into t.ic buf with
+  ensure t t.buffer_size;
+  let buf = Cstruct.of_bigarray ~off:(write_pos t) ~len:t.buffer_size t.buf in
+  match Eio.Flow.read_into t.reader buf with
   | got ->
       t.len <- t.len + got;
       (t.buf, t.off, t.len)
@@ -65,13 +71,13 @@ let read_into t ~off ~len buf =
   let len = if t.len < len then t.len else len in
   if len > 0 then (
     Bigstringaf.unsafe_blit t.buf ~src_off:t.off buf ~dst_off:off ~len;
-    shift t len);
+    consume t len);
   len
 
 let read_char t =
   ensure_input t 1;
   if t.len >= 1 then (
     let c = Bigstringaf.unsafe_get t.buf t.off in
-    shift t 1;
+    consume t 1;
     c)
   else raise End_of_file
