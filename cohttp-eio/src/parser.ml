@@ -203,8 +203,8 @@ let chunk (total_read : int) (req : Http.Request.t) =
 
 let fixed_body content_length =
   if content_length > 0 then
-    crlf *> (take_bigstring content_length >>| fun body -> Cstruct.buffer body)
-  else crlf *> return Cstruct.empty
+    take_bigstring content_length >>| fun body -> Cstruct.buffer body
+  else return Cstruct.empty
 
 exception Parse_error of string
 
