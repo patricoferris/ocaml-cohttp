@@ -177,11 +177,10 @@ let make_request_body_reader (conn : Client_connection.t) (req : Http.Request.t)
               with e -> Error (Printexc.to_string e))
       | _ -> fun () -> Error "Request is not a fixed content body"
 
-    let total_read = ref 0
-
     let read_chunk =
       match Http.Header.get_transfer_encoding req.headers with
       | Http.Transfer.Chunked ->
+          let total_read = ref 0 in
           let rec chunk_loop f =
             if !read_complete then Error "End of file"
             else
