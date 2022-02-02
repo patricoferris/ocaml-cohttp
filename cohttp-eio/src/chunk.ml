@@ -1,7 +1,4 @@
-type 'a t = [ `String of Cstruct.t | `Chunked of 'a read_chunk | `None ]
-and 'a read_chunk = (chunk -> unit) -> [ `Ok of 'a | `Eof ]
-
-and chunk =
+type t =
   | Chunk of {
       data : Cstruct.t;
       length : int;

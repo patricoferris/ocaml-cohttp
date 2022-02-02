@@ -55,15 +55,15 @@ let feed_input t =
   match Eio.Flow.read_into t.reader buf with
   | got ->
       t.len <- t.len + got;
-      (t.buf, t.off, t.len)
-  | exception End_of_file -> (t.buf, t.off, 0)
+      Cstruct.of_bigarray ~off:t.off ~len:t.len t.buf
+  | exception End_of_file -> Cstruct.empty
 
 let ensure_input t len =
   if t.len < len then
     let continue = ref true in
     while !continue do
-      let _, _, got = feed_input t in
-      continue := if got > 0 && t.len < len then true else false
+      let buf = feed_input t in
+      continue := if buf.len > 0 && t.len < len then true else false
     done
 
 let read_into t ~off ~len buf =
@@ -81,3 +81,24 @@ let read_char t =
     consume t 1;
     c)
   else raise End_of_file
+
+exception Parse_error of string
+
+let parse t p =
+  let open Angstrom in
+  let rec loop = function
+    | Unbuffered.Partial k ->
+        consume t k.committed;
+        let buf = feed_input t in
+        let more =
+          if buf.len = 0 then Unbuffered.Complete else Unbuffered.Incomplete
+        in
+        loop (k.continue buf.buffer ~off:buf.off ~len:buf.len more)
+    | Unbuffered.Done (len, a) ->
+        consume t len;
+        a
+    | Unbuffered.Fail (len, marks, err) ->
+        consume t len;
+        raise (Parse_error (String.concat " > " marks ^ ": " ^ err))
+  in
+  loop (Unbuffered.parse p)

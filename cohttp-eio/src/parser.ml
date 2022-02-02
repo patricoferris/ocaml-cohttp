@@ -99,7 +99,7 @@ let chunk_exts =
   let chunk_ext_val = quoted_string <|> token in
   many
     (lift2
-       (fun name value : Body.chunk_extension -> { name; value })
+       (fun name value : Chunk.chunk_extension -> { name; value })
        (char ';' *> chunk_ext_name)
        (optional (char '=' *> chunk_ext_val)))
 
@@ -205,24 +205,3 @@ let fixed_body content_length =
   if content_length > 0 then
     take_bigstring content_length >>| fun body -> Cstruct.buffer body
   else return Cstruct.empty
-
-exception Parse_error of string
-
-let parse : 'a Angstrom.t -> Reader.t -> 'a =
- fun p reader ->
-  let rec loop = function
-    | Unbuffered.Partial k ->
-        Reader.consume reader k.committed;
-        let buf, off, len = Reader.feed_input reader in
-        let more =
-          if len = 0 then Unbuffered.Complete else Unbuffered.Incomplete
-        in
-        loop (k.continue buf ~off ~len more)
-    | Unbuffered.Done (len, a) ->
-        Reader.consume reader len;
-        a
-    | Unbuffered.Fail (len, marks, err) ->
-        Reader.consume reader len;
-        raise (Parse_error (String.concat " > " marks ^ ": " ^ err))
-  in
-  loop (Unbuffered.parse p)
