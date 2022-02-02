@@ -33,9 +33,9 @@ let read_chunk t =
         else
           let chunk = Reader.parse t.reader @@ Parser.chunk !total_read t.req in
           match chunk with
-          | `Chunk (data, length, extensions) ->
-              f (Chunk.Chunk { data; length; extensions });
-              total_read := !total_read + length;
+          | `Chunk (size, data, extensions) ->
+              f (Chunk.Chunk { size; data; extensions });
+              total_read := !total_read + size;
               (chunk_loop [@tailcall]) f
           | `Last_chunk (extensions, updated_request) ->
               t.read_complete <- true;

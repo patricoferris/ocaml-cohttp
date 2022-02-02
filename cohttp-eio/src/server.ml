@@ -69,7 +69,35 @@ let datetime_to_string (tm : Unix.tm) =
   Format.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT" weekday tm.tm_mday month
     (1900 + tm.tm_year) tm.tm_hour tm.tm_min tm.tm_sec
 
-let write_chunked _read_chunk = ()
+(* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
+let write_chunked faraday chunk_writer =
+  let write_extensions exts =
+    List.iter
+      (fun { Chunk.name; value } ->
+        Faraday.write_char faraday ';';
+        Faraday.write_string faraday name;
+        Option.iter
+          (fun v ->
+            let v = Printf.sprintf "=%s" v in
+            Faraday.write_string faraday v)
+          value)
+      exts
+  in
+  let write = function
+    | Chunk.Chunk { size; data; extensions } ->
+        let size = Printf.sprintf "%X" size in
+        Faraday.write_string faraday size;
+        write_extensions extensions;
+        Faraday.write_string faraday "\r\n";
+        Faraday.write_bigstring faraday data.buffer;
+        Faraday.write_string faraday "\r\n"
+    | Chunk.Last_chunk extensions ->
+        let size = Printf.sprintf "%X" 0 in
+        Faraday.write_string faraday size;
+        write_extensions extensions;
+        Faraday.write_string faraday "\r\n"
+  in
+  chunk_writer write
 
 let write_response (client_conn : Client_connection.t) { Response.res; body } =
   let faraday = Faraday.create Reader.default_io_buffer_size in
@@ -114,7 +142,7 @@ let write_response (client_conn : Client_connection.t) { Response.res; body } =
         Faraday.write_bigstring faraday ~off:cs.off ~len:cs.len
           (Cstruct.to_bigarray cs)
     | `Custom f -> f faraday
-    | `Chunked read_chunk -> write_chunked read_chunk
+    | `Chunked chunk_writer -> write_chunked faraday chunk_writer
     | `None -> ());
     if not (Faraday.is_closed faraday) then Faraday.close faraday
   in

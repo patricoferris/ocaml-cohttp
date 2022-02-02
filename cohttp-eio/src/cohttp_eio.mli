@@ -49,14 +49,10 @@ end
     https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
 module Chunk : sig
   type t =
-    | Chunk of {
-        data : Cstruct.t;
-        length : int;
-        extensions : chunk_extension list;
-      }
-    | Last_chunk of chunk_extension list
+    | Chunk of { size : int; data : Cstruct.t; extensions : extension list }
+    | Last_chunk of extension list
 
-  and chunk_extension = { name : string; value : string option }
+  and extension = { name : string; value : string option }
 end
 
 (** [Request] is a HTTP/1.1 request. *)

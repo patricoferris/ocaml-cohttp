@@ -99,7 +99,7 @@ let chunk_exts =
   let chunk_ext_val = quoted_string <|> token in
   many
     (lift2
-       (fun name value : Chunk.chunk_extension -> { name; value })
+       (fun name value : Chunk.extension -> { name; value })
        (char ';' *> chunk_ext_name)
        (optional (char '=' *> chunk_ext_val)))
 
@@ -145,7 +145,7 @@ let chunk (total_read : int) (req : Http.Request.t) =
   | sz when sz > 0 ->
       let* extensions = chunk_exts <* crlf in
       let* data = take_bigstring sz <* crlf >>| Cstruct.of_bigarray in
-      return @@ `Chunk (data, sz, extensions)
+      return @@ `Chunk (sz, data, extensions)
   | 0 ->
       let* extensions = chunk_exts <* crlf in
       (* Read trailer headers if any and append those to request headers.
