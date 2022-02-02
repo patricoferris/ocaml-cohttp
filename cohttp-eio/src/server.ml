@@ -168,7 +168,6 @@ let write_response (client_conn : Client_connection.t) { Response.res; body } =
 let rec handle_request (t : t) (conn : Client_connection.t) : unit =
   match Reader.parse conn.reader Parser.request with
   | req -> (
-      let read_complete = ref false in
       let req = Request.{ req; reader = conn.reader; read_complete = false } in
       match t.request_handler req with
       | Some { Response.res; body } -> (
@@ -186,7 +185,7 @@ let rec handle_request (t : t) (conn : Client_connection.t) : unit =
           | true ->
               (* Drain unread bytes from client connection before
                  reading another request. *)
-              if not !read_complete then
+              if not req.read_complete then
                 match
                   Http.Header.get_transfer_encoding (Request.headers req)
                 with
