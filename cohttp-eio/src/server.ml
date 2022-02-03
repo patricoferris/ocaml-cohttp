@@ -36,39 +36,6 @@ let cpu_core_count =
   | (exception Unix.Unix_error (_, _, _)) ->
       1
 
-(** [to_rfc1123 t] converts [t] to a string in a format as defined by RFC 1123. *)
-let datetime_to_string (tm : Unix.tm) =
-  let weekday =
-    match tm.tm_wday with
-    | 0 -> "Sun"
-    | 1 -> "Mon"
-    | 2 -> "Tue"
-    | 3 -> "Wed"
-    | 4 -> "Thu"
-    | 5 -> "Fri"
-    | 6 -> "Sat"
-    | 7 -> "Sun"
-    | _ -> assert false
-  in
-  let month =
-    match tm.tm_mon with
-    | 0 -> "Jan"
-    | 1 -> "Feb"
-    | 2 -> "Mar"
-    | 3 -> "Apr"
-    | 4 -> "May"
-    | 5 -> "Jun"
-    | 6 -> "Jul"
-    | 7 -> "Aug"
-    | 8 -> "Sep"
-    | 9 -> "Oct"
-    | 10 -> "Nov"
-    | 11 -> "Dec"
-    | _ -> assert false
-  in
-  Format.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT" weekday tm.tm_mday month
-    (1900 + tm.tm_year) tm.tm_hour tm.tm_min tm.tm_sec
-
 (* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
 let write_chunked faraday chunk_writer =
   let write_extensions exts =
@@ -125,10 +92,6 @@ let write_response (client_conn : Client_connection.t) { Response.res; body } =
       | `Chunked _ -> Http.Header.remove headers hdr
       | `Custom _ -> headers
       | `None -> Http.Header.add_unless_exists headers hdr "0"
-    in
-    let headers =
-      let date = Unix.time () |> Unix.gmtime in
-      Http.Header.add_unless_exists headers "Date" (datetime_to_string date)
     in
     let headers = Http.Header.clean_dup headers in
     Http.Header.iter
