@@ -137,9 +137,9 @@ let rec handle_request (t : t) (conn : Client_connection.t) : unit =
           in
           let res = { res with headers = response_headers } in
           write_response conn { Response.res; body };
-          match keep_alive with
-          | false -> Client_connection.close conn
-          | true ->
+          match (keep_alive, Atomic.get t.closed) with
+          | _, true | false, _ -> Client_connection.close conn
+          | true, false ->
               (* Drain unread bytes from client connection before
                  reading another request. *)
               if not req.read_complete then

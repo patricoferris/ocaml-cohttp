@@ -72,16 +72,15 @@ module Request : sig
   (** {1 Builtin Request Body Readers} *)
 
   val read_fixed : t -> (Cstruct.t, string) result
-  (** [read_fixed t] is [Ok buf] if "Content-Length" header value exists in [t]
-      and is a valid integer value. Otherwise it is [Error err] where [err] is
-      the error text. *)
+  (** [read_fixed t] is [Ok buf] if "Content-Length" header is a valid integer
+      value in [t]. Otherwise it is [Error err] where [err] is the error text. *)
 
   val read_chunk : t -> (Chunk.t -> unit) -> (t, string) result
-  (** [read_chunk t f] is [Ok req] if "Transfer-Encoding" header value exists,
-      is "chunked" in [t] and all chunks in a request are read successfully.
-      [req] is the updated request as specified by the chunked encoding
-      algorithm in https://datatracker.ietf.org/doc/html/rfc7230#section-4.1.3.
-      Otherwise it is [Error err] where [err] is the error text. *)
+  (** [read_chunk t f] is [Ok req] if "Transfer-Encoding" header value is
+      "chunked" in [t] and all chunks in a request are read successfully. [req]
+      is the updated request as specified by the chunked encoding algorithm in
+      https://datatracker.ietf.org/doc/html/rfc7230#section-4.1.3. Otherwise it
+      is [Error err] where [err] is the error text. *)
 
   (** {1 Custom Request Body Readers} *)
 
