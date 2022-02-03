@@ -78,12 +78,6 @@ let write_response (client_conn : Client_connection.t) { Response.res; body } =
     Faraday.write_string faraday status_line;
     let headers = Http.Response.headers res in
     let headers =
-      (*--- Don't cache set-cookie headers in browsers and proxies. ---*)
-      if Http.Header.mem headers "set-cookie" then
-        Http.Header.add headers "Cache-Control" {|no-cache="Set-Cookie"|}
-      else headers
-    in
-    let headers =
       let hdr = "content-length" in
       match body with
       | `String cs ->
