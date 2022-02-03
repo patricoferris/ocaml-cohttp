@@ -3,7 +3,7 @@ type t = {
   mutable buf : Bigstringaf.t;
   mutable off : int;
   mutable len : int;
-  reader : Eio.Flow.read;
+  reader : Eio.Flow.source;
   buffer_size : int;
 }
 
@@ -19,7 +19,7 @@ let create ?(buffer_size = default_io_buffer_size) reader =
   let buf = Bigstringaf.create buffer_size in
   let off = 0 in
   let len = 0 in
-  { buf; off; len; reader = (reader :> Eio.Flow.read); buffer_size }
+  { buf; off; len; reader = (reader :> Eio.Flow.source); buffer_size }
 
 let reader t = t.reader
 let buffer_size t = t.buffer_size
@@ -52,7 +52,7 @@ let consume t n =
 let feed_input t =
   ensure t t.buffer_size;
   let buf = Cstruct.of_bigarray ~off:(write_pos t) ~len:t.buffer_size t.buf in
-  match Eio.Flow.read_into t.reader buf with
+  match Eio.Flow.read t.reader buf with
   | got ->
       t.len <- t.len + got;
       Cstruct.of_bigarray ~off:t.off ~len:t.len t.buf

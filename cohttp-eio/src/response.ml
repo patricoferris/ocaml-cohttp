@@ -1,9 +1,9 @@
 type t = { res : Http.Response.t; body : body }
 
 and body =
-  [ `String of Cstruct.t
+  [ `String of string
   | `Chunked of write_chunk
-  | `Custom of Faraday.t -> unit
+  | `Custom of Eio.Flow.sink -> unit
   | `None ]
 
 and write_chunk = (Chunk.t -> unit) -> unit
@@ -24,14 +24,12 @@ let text body =
   let headers =
     Http.Header.init_with "content-type" "text/plain; charset=UTF-8"
   in
-  let body = Cstruct.of_string body in
   create ~headers (`String body)
 
 let html body =
   let headers =
     Http.Header.init_with "content-type" "text/html; charset=UTF-8"
   in
-  let body = Cstruct.of_string body in
   create ~headers (`String body)
 
 let not_found = create ~status:`Not_found `None

@@ -1,4 +1,4 @@
 (library
  (name cohttp_eio)
  (public_name cohttp-eio)
- (libraries eio eio_main bigstringaf cstruct logs fmt http angstrom faraday))
+ (libraries eio eio_main cstruct http angstrom))

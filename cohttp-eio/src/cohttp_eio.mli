@@ -2,12 +2,12 @@
 module Reader : sig
   type t
 
-  val create : ?buffer_size:int -> #Eio.Flow.read -> t
+  val create : ?buffer_size:int -> #Eio.Flow.source -> t
   (** [create ?buffer_size reader] creates [t]. [buffer_size] is the maximum
       number of bytes [reader] attempts to read in one call. If [buffer_size] is
       not given then [default_io_buffer_size] is used. *)
 
-  val reader : t -> Eio.Flow.read
+  val reader : t -> Eio.Flow.source
   (** [reader t] returns the reader used by [t]. *)
 
   val buffer_size : t -> int
@@ -97,9 +97,9 @@ module Response : sig
   type t
 
   and body =
-    [ `String of Cstruct.t
+    [ `String of string
     | `Chunked of write_chunk
-    | `Custom of Faraday.t -> unit
+    | `Custom of Eio.Flow.sink -> unit
     | `None ]
 
   and write_chunk = (Chunk.t -> unit) -> unit

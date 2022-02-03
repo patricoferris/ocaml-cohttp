@@ -37,90 +37,66 @@ let cpu_core_count =
       1
 
 (* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
-let write_chunked faraday chunk_writer =
-  let write_extensions exts =
+let write_chunked (client_conn : Client_connection.t) chunk_writer =
+  let extensions exts =
+    let buf = Buffer.create 0 in
     List.iter
       (fun { Chunk.name; value } ->
-        Faraday.write_char faraday ';';
-        Faraday.write_string faraday name;
-        Option.iter
-          (fun v ->
-            let v = Printf.sprintf "=%s" v in
-            Faraday.write_string faraday v)
-          value)
-      exts
+        let v =
+          match value with None -> "" | Some v -> Printf.sprintf "=%s" v
+        in
+        Printf.sprintf ";%s%s" name v |> Buffer.add_string buf)
+      exts;
+    Buffer.contents buf
   in
   let write = function
-    | Chunk.Chunk { size; data; extensions } ->
-        let size = Printf.sprintf "%X" size in
-        Faraday.write_string faraday size;
-        write_extensions extensions;
-        Faraday.write_string faraday "\r\n";
-        Faraday.write_bigstring faraday data.buffer;
-        Faraday.write_string faraday "\r\n"
-    | Chunk.Last_chunk extensions ->
-        let size = Printf.sprintf "%X" 0 in
-        Faraday.write_string faraday size;
-        write_extensions extensions;
-        Faraday.write_string faraday "\r\n"
+    | Chunk.Chunk { size; data; extensions = exts } ->
+        let buf =
+          Printf.sprintf "%X%s\r\n%s\r\n" size (extensions exts)
+            (Cstruct.to_string data)
+        in
+        Eio.Flow.copy_string buf client_conn.flow
+    | Chunk.Last_chunk exts ->
+        let buf = Printf.sprintf "%X%s\r\n" 0 (extensions exts) in
+        Eio.Flow.copy_string buf client_conn.flow
   in
   chunk_writer write
 
 let write_response (client_conn : Client_connection.t) { Response.res; body } =
-  let faraday = Faraday.create Reader.default_io_buffer_size in
-  let serialize () =
-    let status_line =
-      let version = Http.Response.version res |> Http.Version.to_string in
-      let status = Http.Response.status res |> Http.Status.to_int in
-      let status_phrase = Http.Status.reason_phrase_of_code status in
-      Printf.sprintf "%s %d %s\r\n" version status status_phrase
-    in
-    Faraday.write_string faraday status_line;
-    let headers = Http.Response.headers res in
-    let headers =
-      let hdr = "content-length" in
-      match body with
-      | `String cs ->
-          Http.Header.add_unless_exists headers hdr
-            (string_of_int @@ Cstruct.length cs)
-      | `Chunked _ -> Http.Header.remove headers hdr
-      | `Custom _ -> headers
-      | `None -> Http.Header.add_unless_exists headers hdr "0"
-    in
-    let headers = Http.Header.clean_dup headers in
-    Http.Header.iter
-      (fun name v ->
-        let hdr = Printf.sprintf "%s: %s\r\n" name v in
-        Faraday.write_string faraday hdr)
-      headers;
-    Faraday.write_string faraday "\r\n";
-    (match body with
-    | `String (cs : Cstruct.t) ->
-        Faraday.write_bigstring faraday ~off:cs.off ~len:cs.len
-          (Cstruct.to_bigarray cs)
-    | `Custom f -> f faraday
-    | `Chunked chunk_writer -> write_chunked faraday chunk_writer
-    | `None -> ());
-    if not (Faraday.is_closed faraday) then Faraday.close faraday
-  in
-  let rec write () =
-    match Faraday.operation faraday with
-    | `Writev iovecs ->
-        let iovecs =
-          List.map
-            (fun { Faraday.buffer; off; len } ->
-              Cstruct.of_bigarray ~off ~len buffer)
-            iovecs
-        in
-        let source = Eio.Flow.cstruct_source iovecs in
-        Eio.Flow.copy source client_conn.oc;
-        (write [@tailcall]) ()
-    | `Yield ->
-        Eio.Std.Fibre.yield ();
-        (write [@tailcall]) ()
-    | `Close -> ()
-  in
-  Eio.Std.Fibre.both serialize write
+  let buf = Buffer.create 1024 in
+  let version = Http.Response.version res |> Http.Version.to_string in
+  let status = Http.Response.status res |> Http.Status.to_string in
+  Buffer.add_string buf version;
+  Buffer.add_string buf " ";
+  Buffer.add_string buf status;
+  Buffer.add_string buf "\r\n";
+  let headers = Http.Response.headers res in
+  let content_length = "content-length" in
+  (match body with
+  | `String b ->
+      Http.Header.add_unless_exists headers content_length
+        (string_of_int @@ String.length b)
+  | `Chunked _ -> Http.Header.remove headers content_length
+  | `Custom _ -> headers
+  | `None -> Http.Header.add_unless_exists headers content_length "0")
+  |> Http.Header.clean_dup
+  |> Http.Header.iter (fun k v ->
+         Buffer.add_string buf k;
+         Buffer.add_string buf ": ";
+         Buffer.add_string buf v;
+         Buffer.add_string buf "\r\n");
+  Buffer.add_string buf "\r\n";
+  match body with
+  | `String s ->
+      Buffer.add_string buf s;
+      Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow
+  | `Custom writer ->
+      Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow;
+      writer (client_conn.flow :> Eio.Flow.sink)
+  | `Chunked chunk_writer ->
+      Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow;
+      write_chunked client_conn chunk_writer
+  | `None -> Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow
 
 let rec handle_request (t : t) (conn : Client_connection.t) : unit =
   match Reader.parse conn.reader Parser.request with
@@ -177,14 +153,15 @@ let run_accept_loop (t : t) sw env =
   while not (Atomic.get t.closed) do
     Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
     @@ fun ~sw flow addr ->
-    handle_request t
+    let client_conn =
       {
         Client_connection.flow;
         addr;
         switch = sw;
-        reader = Reader.create (flow :> Eio.Flow.read);
-        oc = (flow :> Eio.Flow.write);
+        reader = Reader.create (flow :> Eio.Flow.source);
       }
+    in
+    handle_request t client_conn
   done
 
 let create ?(socket_backlog = 10_000) ?(domains = cpu_core_count) ~port
