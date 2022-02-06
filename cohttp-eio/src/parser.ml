@@ -14,31 +14,19 @@ let space = char '\x20'
 let htab = char '\t'
 let ows = skip_many (space <|> htab)
 let optional x = option None (x >>| Option.some)
+let is_vchar = function '\x21' .. '\x7E' -> true | _ -> false
 let vchar = satisfy (function '\x21' .. '\x7E' -> true | _ -> false)
 let digit = satisfy (function '0' .. '9' -> true | _ -> false)
-let crlf = string_ci "\r\n" <?> "[crlf]"
+let crlf = string "\r\n" <?> "[crlf]"
 
 (*-- https://datatracker.ietf.org/doc/html/rfc7230#section-3.2 --*)
 let headers =
-  let header_field =
-    let* header_name = token <* char ':' <* ows >>| String.lowercase_ascii in
-    let+ header_value =
-      let field_content =
-        let c2 =
-          optional
-            (let+ c1 = skip_many1 (space <|> htab) *> vchar in
-             Format.sprintf " %c" c1)
-          >>| function
-          | Some s -> s
-          | None -> ""
-        in
-        lift2 (fun c1 c2 -> Format.sprintf "%c%s" c1 c2) vchar c2
-      in
-      many field_content >>| String.concat "" <* crlf <* commit
-    in
-    (header_name, header_value)
+  let header =
+    let* name = token <* char ':' <* ows in
+    let+ value = take_while is_vchar <* crlf in
+    (name, value)
   in
-  many header_field <* crlf <* commit >>| Http.Header.of_list_rev
+  many header <* crlf <* commit >>| Http.Header.of_list
 
 exception Eof
 
