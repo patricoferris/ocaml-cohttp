@@ -11,7 +11,6 @@ type t = {
   closed : bool Atomic.t;
 }
 
-(* TODO also close connections? *)
 let close t = ignore @@ Atomic.compare_and_set t.closed false true
 
 let cpu_core_count =
@@ -124,46 +123,47 @@ let rec handle_request (t : t) (conn : Client_connection.t) : unit =
       Printf.eprintf "\nUnhandled exception: %s" (Printexc.to_string exn);
       write_response conn Response.internal_server_error
 
-let run_accept_loop (t : t) sw env =
-  let net = Eio.Stdenv.net env in
-  let sockaddr = `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port) in
-  let ssock =
-    Eio.Net.listen ~reuse_addr:true ~reuse_port:true ~backlog:t.socket_backlog
-      ~sw net sockaddr
-  in
+let run_domain (t : t) env =
   let on_accept_error exn =
     Printf.fprintf stderr "Error while accepting connection: %s"
       (Printexc.to_string exn)
   in
-  while not (Atomic.get t.closed) do
-    Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
-    @@ fun ~sw flow addr ->
-    let client_conn =
-      {
-        Client_connection.flow;
-        addr;
-        switch = sw;
-        reader = Reader.create (flow :> Eio.Flow.source);
-      }
-    in
-    handle_request t client_conn
-  done
+  Switch.run (fun sw ->
+      let ssock =
+        Eio.Net.listen (Eio.Stdenv.net env) ~sw ~reuse_addr:true
+          ~reuse_port:true ~backlog:t.socket_backlog
+        @@ `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port)
+      in
+      while not (Atomic.get t.closed) do
+        Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
+          (fun ~sw flow addr ->
+            let client_conn =
+              {
+                Client_connection.flow;
+                addr;
+                switch = sw;
+                reader = Reader.create flow;
+              }
+            in
+            handle_request t client_conn)
+      done)
 
 let create ?(socket_backlog = 10_000) ?(domains = cpu_core_count) ~port
     request_handler : t =
   { socket_backlog; domains; port; request_handler; closed = Atomic.make false }
 
-(* wrk2 -t10 -c400 -d30s -R2000 http://localhost:3000 *)
+(* wrk2 -t 24 -c 1000 -d 60s -R400000 http://localhost:8080 *)
 let run (t : t) =
   Eio_main.run @@ fun env ->
+  Eio.Std.traceln "\nServer listening on 127.0.0.1:%d" t.port;
+  Eio.Std.traceln "\nStarting %d domains ...%!" t.domains;
   Switch.run @@ fun sw ->
-  (* Run accept loop on domain0 without creating a Domain.t *)
-  run_accept_loop t sw env;
   let domain_mgr = Eio.Stdenv.domain_mgr env in
-  for _ = 2 to t.domains do
-    Fibre.fork ~sw @@ fun () ->
-    Eio.Domain_manager.run domain_mgr @@ fun () -> run_accept_loop t sw env
-  done
+  for i = 2 to t.domains do
+    Eio.Std.Fibre.fork ~sw (fun () ->
+        Eio.Domain_manager.run domain_mgr (fun () -> run_domain t env))
+  done;
+  run_domain t env
 
 (* Basic handlers *)
 
