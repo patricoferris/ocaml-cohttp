@@ -12,7 +12,7 @@ let token =
 
 let space = char '\x20'
 let htab = char '\t'
-let ows = skip_many (space <|> htab)
+let ows = skip_while (function ' ' | '\t' -> true | _ -> false)
 let optional x = option None (x >>| Option.some)
 let is_vchar = function '\x21' .. '\x7E' -> true | _ -> false
 let vchar = satisfy (function '\x21' .. '\x7E' -> true | _ -> false)
@@ -23,7 +23,13 @@ let crlf = string "\r\n" <?> "[crlf]"
 let headers =
   let header =
     let* name = token <* char ':' <* ows in
-    let+ value = take_while is_vchar <* crlf in
+    let+ value =
+      take_while (function
+        | '\x21' .. '\x7E' -> true (* vchar*)
+        | ' ' | '\t' -> true
+        | _ -> false)
+      <* crlf
+    in
     (name, value)
   in
   many header <* crlf <* commit >>| Http.Header.of_list
@@ -53,7 +59,7 @@ let[@warning "-3"] request =
     }
   in
   let eof = end_of_input >>| fun () -> raise Eof in
-  request <|> eof
+  eof <|> request
 
 (* Chunked encoding parser *)
 

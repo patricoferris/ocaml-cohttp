@@ -30,24 +30,12 @@ let text =
 
 open Cohttp_eio
 
-let root : Server.handler =
- fun req ->
-  let uri = Request.resource req |> Uri.of_string in
-  match Uri.path uri with "/" -> Some (Response.text text) | _ -> None
-
-let exit : Server.handler =
- fun req ->
-  let uri = Request.resource req |> Uri.of_string in
-  match Uri.path uri with "/exit" -> exit 0 | _ -> None
-
-let html : Server.handler =
- fun req ->
-  let uri = Request.resource req |> Uri.of_string in
-  match Uri.path uri with "/html" -> Some (Response.html text) | _ -> None
-
-let app =
-  let open Server.Infix in
-  root >>? exit >>? html >>? Server.not_found
+let app req =
+  match Request.resource req with
+  | "/" -> Response.text text
+  | "/html" -> Response.html text
+  | "/exit" -> exit 0
+  | _ -> Response.not_found
 
 let () =
   let port = ref 8080 in

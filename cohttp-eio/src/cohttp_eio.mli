@@ -135,7 +135,7 @@ end
 (** [Server] is a HTTP 1.1 server. *)
 module Server : sig
   type t
-  type handler = Request.t -> Response.t option
+  type handler = Request.t -> Response.t
   type middleware = handler -> handler
 
   (** {1 Run Server} *)
@@ -150,12 +150,12 @@ module Server : sig
 
   (** {1 Handler Combinators} *)
 
-  val join : handler -> handler -> handler
+  (* val join : handler -> handler -> handler *)
   (** [join h1 h2] executes handler [h1]. If response is [None] then it executes
       handler [h2]. *)
 
-  module Infix : sig
-    val ( >>? ) : handler -> handler -> handler
-    (** [h1 >>? h2] is [join h1 h2] *)
-  end
+  (*module Infix : sig *)
+  (*  val ( >>? ) : handler -> handler -> handler *)
+  (*  (1** [h1 >>? h2] is [join h1 h2] *1) *)
+  (*end *)
 end
