@@ -45,7 +45,8 @@ let write_chunked (client_conn : Client_connection.t) chunk_writer =
   chunk_writer write
 
 let write_response (client_conn : Client_connection.t) { Response.res; body } =
-  let buf = Buffer.create 1024 in
+  Buffer.clear client_conn.response_buf;
+  let buf = client_conn.response_buf in
   let version = Http.Response.version res |> Http.Version.to_string in
   let status = Http.Response.status res |> Http.Status.to_string in
   Buffer.add_string buf version;
@@ -73,39 +74,29 @@ let write_response (client_conn : Client_connection.t) { Response.res; body } =
   | `None -> Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow
 
 let rec handle_request (t : t) (conn : Client_connection.t) : unit =
-  match Reader.parse conn.reader Parser.request with
+  match Parser.(parse conn.reader request) with
   | req -> (
       let req = Request.{ req; reader = conn.reader; read_complete = false } in
-      let { Response.res; body } = t.request_handler req in
-      let keep_alive = Request.is_keep_alive req in
-      let response_headers =
-        Http.Header.add_unless_exists
-          (Http.Response.headers res)
-          "connection"
-          (if keep_alive then "keep-alive" else "close")
-      in
-      let res = { res with headers = response_headers } in
-      write_response conn { Response.res; body };
-      match (keep_alive, Atomic.get t.stopped) with
+      let res = t.request_handler req in
+      write_response conn res;
+      match (Request.is_keep_alive req, Atomic.get t.stopped) with
       | _, true | false, _ -> Client_connection.close conn
       | true, false ->
           (* Drain unread bytes from client connection before
              reading another request. *)
-          if not req.read_complete then
-            match Http.Header.get_transfer_encoding (Request.headers req) with
-            | Http.Transfer.Fixed _ -> ignore @@ Request.read_fixed req
-            | Http.Transfer.Chunked -> ignore @@ Request.read_chunk req ignore
-            | _ -> ()
-          else ();
-          (handle_request [@tailcall]) t conn)
-  | exception End_of_file ->
-      Printf.eprintf "\nEnd_of_file%!";
-      Client_connection.close conn
-  | exception Reader.Parse_error msg ->
+          (* if not req.read_complete then *)
+          (*   match Http.Header.get_transfer_encoding (Request.headers req) with *)
+          (*   | Http.Transfer.Fixed _ -> ignore @@ Request.read_fixed req *)
+          (*   | Http.Transfer.Chunked -> ignore @@ Request.read_chunk req ignore *)
+          (*   | _ -> () *)
+          (* else (); *)
+          handle_request t conn)
+  | exception End_of_file -> Client_connection.close conn
+  | exception Parser.Parse_failure msg ->
       Printf.eprintf "\nRequest parsing error: %s%!" msg;
       write_response conn Response.bad_request
   | exception exn ->
-      Printf.eprintf "\nUnhandled exception: %s" (Printexc.to_string exn);
+      Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
       write_response conn Response.internal_server_error
 
 let run_domain (t : t) env =
@@ -128,6 +119,7 @@ let run_domain (t : t) env =
                 addr;
                 switch = sw;
                 reader = Reader.create (flow :> Eio.Flow.source);
+                response_buf = Buffer.create 512;
               }
             in
             handle_request t client_conn)

@@ -18,7 +18,7 @@ module Reader : sig
   val source : t -> Eio.Flow.source
   (** [source t] returns the reader used by [t]. *)
 
-  val buffer : t -> bigstring
+  (* val buffer : t -> bigstring *)
   (** [buffer t] is the unconsumed bytes in [t]. *)
 
   val length : t -> int
@@ -35,14 +35,14 @@ module Reader : sig
 
       @raise End_of_file if [source t] has reached end of file. *)
 
-  exception Parse_error of string
+  (*exception Parse_error of string *)
 
-  val parse : t -> 'a Angstrom.t -> 'a
-  (** [parse t p] is [a] after an Angstrom parser [p] is successfully executed
-      over [t].
+  (*val parse : t -> 'a Angstrom.t -> 'a *)
+  (*(1** [parse t p] is [a] after an Angstrom parser [p] is successfully executed *)
+  (*    over [t]. *)
 
-      @raise Parse_error if an error is encountered during parsing.
-      @raise End_of_file if [t] has reached end of file. *)
+  (*    @raise Parse_error if an error is encountered during parsing. *)
+  (*    @raise End_of_file if [t] has reached end of file. *1) *)
 end
 
 (** [Chunk] encapsulates HTTP/1.1 chunk transfer encoding data structures.
@@ -158,4 +158,48 @@ module Server : sig
   (*  val ( >>? ) : handler -> handler -> handler *)
   (*  (1** [h1 >>? h2] is [join h1 h2] *1) *)
   (*end *)
+end
+
+(**/**)
+
+module Private : sig
+  module Parser : sig
+    type 'a t
+
+    type bigstring =
+      (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+    exception Parse_failure of string
+
+    val return : 'a -> 'a t
+    val fail : string -> 'a t
+    val ( <?> ) : 'a t -> string -> 'a t
+    val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
+    val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
+    val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
+    val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+    val ( <* ) : 'a t -> _ t -> 'a t
+    val ( *> ) : _ t -> 'b t -> 'b t
+    val ( <|> ) : 'a t -> 'a t -> 'a t
+    val lift : ('a -> 'b) -> 'a t -> 'b t
+    val lift2 : ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
+    val end_of_input : unit t
+    val pos : int t
+    val option : 'a -> 'a t -> 'a t
+    val peek_char : char t
+    val peek_string : int -> string t
+    val char : char -> char t
+    val satisfy : (char -> bool) -> char t
+    val string : string -> string t
+    val take_while1 : (char -> bool) -> string t
+    val take_while : (char -> bool) -> string t
+    val take_bigstring : int -> bigstring t
+    val take : int -> string t
+    val many : 'a t -> 'a list t
+    val many_till : 'a t -> _ t -> 'a list t
+    val skip : (char -> bool) -> unit t
+    val skip_while : (char -> bool) -> unit t
+    val skip_many : 'a t -> unit t
+    val parse : Reader.t -> 'a t -> 'a
+  end
 end

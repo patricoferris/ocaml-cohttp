@@ -10,7 +10,7 @@ type t = {
 type bigstring =
   (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
 
-let default_io_buffer_size = 4096
+let default_io_buffer_size = 512
 
 let create ?(buffer_size = default_io_buffer_size) source =
   assert (buffer_size > 0);
@@ -23,7 +23,6 @@ let source t = t.source
 let buffer_size t = t.buffer_size
 let offset t = t.off
 let length t = t.len
-let buffer t = t.buf
 
 let grow t size =
   let extra_len =
@@ -48,23 +47,6 @@ let consume t n =
 let fill t size =
   let to_read = grow t size in
   let write_off = t.off + t.len in
-  let buf = Cstruct.of_bigarray ~off:write_off ~len:to_read t.buf in
+  let buf = Cstruct.of_bigarray t.buf ~off:write_off ~len:to_read in
   let got = Eio.Flow.read t.source buf in
   t.len <- t.len + got
-
-exception Parse_error of string
-
-let parse t p =
-  let open Angstrom in
-  let rec loop = function
-    | Unbuffered.Partial k ->
-        fill t t.buffer_size;
-        loop (k.continue t.buf ~off:t.off ~len:t.len Unbuffered.Incomplete)
-    | Unbuffered.Done (len, a) ->
-        if len > 0 then consume t len;
-        a
-    | Unbuffered.Fail (len, marks, err) ->
-        if len > 0 then consume t len;
-        raise (Parse_error (String.concat " > " marks ^ ": " ^ err))
-  in
-  loop (Unbuffered.parse p)

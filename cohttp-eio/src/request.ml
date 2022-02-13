@@ -19,8 +19,7 @@ let read_fixed t =
       if t.read_complete then Error "End of file"
       else
         let content_length = Int64.to_int content_length in
-        try
-          Result.ok @@ Reader.parse t.reader (Parser.fixed_body content_length)
+        try Result.ok @@ Parser.(parse t.reader (fixed_body content_length))
         with e -> Error (Printexc.to_string e))
   | _ -> Error "Request is not a fixed content body"
 
@@ -31,7 +30,7 @@ let read_chunk t =
       let rec chunk_loop f =
         if t.read_complete then Error "End of file"
         else
-          let chunk = Reader.parse t.reader @@ Parser.chunk !total_read t.req in
+          let chunk = Parser.(parse t.reader (chunk !total_read t.req)) in
           match chunk with
           | `Chunk (size, data, extensions) ->
               f (Chunk.Chunk { size; data; extensions });

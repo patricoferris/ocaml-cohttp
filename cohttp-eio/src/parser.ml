@@ -1,4 +1,237 @@
-open Angstrom
+module P : sig
+  type 'a t
+
+  type bigstring =
+    (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+  exception Parse_failure of string
+
+  val return : 'a -> 'a t
+  val fail : string -> 'a t
+  val ( <?> ) : 'a t -> string -> 'a t
+  val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
+  val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
+  val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+  val ( <* ) : 'a t -> _ t -> 'a t
+  val ( *> ) : _ t -> 'b t -> 'b t
+  val ( <|> ) : 'a t -> 'a t -> 'a t
+  val lift : ('a -> 'b) -> 'a t -> 'b t
+  val lift2 : ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
+  val end_of_input : unit t
+  val pos : int t
+  val option : 'a -> 'a t -> 'a t
+  val peek_char : char t
+  val peek_string : int -> string t
+  val char : char -> char t
+  val satisfy : (char -> bool) -> char t
+  val string : string -> string t
+  val take_while1 : (char -> bool) -> string t
+  val take_while : (char -> bool) -> string t
+  val take_bigstring : int -> bigstring t
+  val take : int -> string t
+  val many : 'a t -> 'a list t
+  val many_till : 'a t -> _ t -> 'a list t
+  val skip : (char -> bool) -> unit t
+  val skip_while : (char -> bool) -> unit t
+  val skip_many : 'a t -> unit t
+  val parse : Reader.t -> 'a t -> 'a
+end = struct
+  type bigstring =
+    (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+  type input = { mutable pos : int; rdr : Reader.t }
+  type 'a t = input -> 'a
+
+  exception Parse_failure of string
+
+  let[@inline always] return v _ = v
+  let[@inline always] fail err _ = Stdlib.raise_notrace (Parse_failure err)
+
+  let[@inline always] ( <?> ) p err inp =
+    try p inp with Parse_failure _e -> fail err inp
+
+  let ( >>= ) p f inp =
+    let a = p inp in
+    f a inp
+
+  let ( let* ) = ( >>= )
+
+  let ( >>| ) p f inp =
+    let v = p inp in
+    f v
+
+  let ( let+ ) = ( >>| )
+
+  let ( <* ) p q inp =
+    let a = p inp in
+    let _ = q inp in
+    a
+
+  let ( *> ) p q inp =
+    let _ = p inp in
+    q inp
+
+  let ( <|> ) p q inp =
+    let old_pos = inp.pos in
+    try p inp
+    with Parse_failure _ ->
+      inp.pos <- old_pos;
+      q inp
+
+  let lift f p = p >>| f
+
+  let lift2 f p q inp =
+    let a = p inp in
+    let b = q inp in
+    f a b
+
+  let ensure inp len =
+    let len = inp.pos + len in
+    if inp.rdr.len < len then Reader.fill inp.rdr (len - inp.rdr.len)
+
+  let pos inp = inp.pos
+
+  let end_of_input inp =
+    try
+      ensure inp 1;
+      fail "[end_of_input] not end_of_input" inp
+    with End_of_file -> return () inp
+
+  let option : 'a -> 'a t -> 'a t = fun x p -> p <|> return x
+
+  let peek_char inp =
+    ensure inp 1;
+    Bigstringaf.unsafe_get inp.rdr.buf (inp.rdr.off + inp.pos)
+
+  let peek_string n inp =
+    ensure inp n;
+    Bigstringaf.substring inp.rdr.buf ~off:(inp.rdr.off + inp.pos) ~len:n
+
+  let sprintf = Printf.sprintf
+
+  let char c inp =
+    let c' = peek_char inp in
+    if c = c' then (
+      inp.pos <- inp.pos + 1;
+      c)
+    else fail (sprintf "[char] expected %C, got %C" c c') inp
+
+  let satisfy f inp =
+    let c = peek_char inp in
+    if f c then (
+      inp.pos <- inp.pos + 1;
+      c)
+    else fail "[satisfy]" inp
+
+  let string s inp =
+    let len = String.length s in
+    ensure inp len;
+    let pos = inp.pos in
+    let i = ref 0 in
+    while
+      !i < len
+      && Char.equal
+           (Bigstringaf.unsafe_get inp.rdr.buf (inp.rdr.off + pos + !i))
+           (String.unsafe_get s !i)
+    do
+      incr i
+    done;
+    if len = !i then (
+      inp.pos <- inp.pos + len;
+      s)
+    else fail "[string]" inp
+
+  let count_while inp f =
+    let old_pos = inp.pos in
+    let pos = ref inp.pos in
+    let continue = ref true in
+    while !continue do
+      ensure inp 1;
+      let c = Bigstringaf.unsafe_get inp.rdr.buf (inp.rdr.off + !pos) in
+      if f c then incr pos else continue := false
+    done;
+    !pos - old_pos
+
+  let take_while1 f inp =
+    let count = count_while inp f in
+    if count < 1 then fail "[take_while1] count is less than 1" inp
+    else
+      let s =
+        Bigstringaf.substring inp.rdr.buf ~off:(inp.rdr.off + inp.pos)
+          ~len:count
+      in
+      inp.pos <- inp.pos + count;
+      s
+
+  let take_while f inp =
+    let count = count_while inp f in
+    if count > 0 then (
+      let s =
+        Bigstringaf.substring inp.rdr.buf ~off:(inp.rdr.off + inp.pos)
+          ~len:count
+      in
+      inp.pos <- inp.pos + count;
+      s)
+    else ""
+
+  let take_bigstring : int -> bigstring t =
+   fun n inp ->
+    ensure inp n;
+    if Reader.length inp.rdr < n then
+      fail "[take_bigstring] not enough input" inp
+    else
+      let s = Bigstringaf.sub inp.rdr.buf ~off:(inp.rdr.off + inp.pos) ~len:n in
+      inp.pos <- inp.pos + n;
+      s
+
+  let take : int -> string t =
+   fun n inp ->
+    ensure inp n;
+    if Reader.length inp.rdr < n then fail "[take] not enough input" inp
+    else
+      let s =
+        Bigstringaf.substring inp.rdr.buf ~off:(inp.rdr.off + inp.pos) ~len:n
+      in
+      inp.pos <- inp.pos + n;
+      s
+
+  let rec many p inp =
+    try
+      let a = p inp in
+      a :: many p inp
+    with Parse_failure _ -> []
+
+  let rec many_till p t inp =
+    try
+      let _ = t inp in
+      let a = p inp in
+      a :: many_till p t inp
+    with Parse_failure _ -> []
+
+  let skip f inp =
+    ensure inp 1;
+    let c = Bigstringaf.unsafe_get inp.rdr.buf (inp.rdr.off + inp.pos) in
+    if f c then inp.pos <- inp.pos + 1 else fail "[skip]" inp
+
+  let skip_while f inp =
+    let count = count_while inp f in
+    inp.pos <- inp.pos + count
+
+  let rec skip_many p inp =
+    match p inp with _ -> skip_many p inp | exception Parse_failure _ -> ()
+
+  let parse : Reader.t -> 'a t -> 'a =
+   fun rdr p ->
+    let inp = { pos = 0; rdr } in
+    let a = p inp in
+    Reader.consume rdr inp.pos;
+    a
+end
+
+include P
+
+let parse = parse
 
 let token =
   take_while1 (function
@@ -17,7 +250,7 @@ let optional x = option None (x >>| Option.some)
 let is_vchar = function '\x21' .. '\x7E' -> true | _ -> false
 let vchar = satisfy (function '\x21' .. '\x7E' -> true | _ -> false)
 let digit = satisfy (function '0' .. '9' -> true | _ -> false)
-let crlf = string "\r\n" <?> "[crlf]"
+let crlf = string "\r\n"
 
 (*-- https://datatracker.ietf.org/doc/html/rfc7230#section-3.2 --*)
 let headers =
@@ -32,9 +265,7 @@ let headers =
     in
     (name, value)
   in
-  many header <* crlf <* commit >>| Http.Header.of_list
-
-exception Eof
+  many header <* crlf >>| Http.Header.of_list
 
 (*-- request-line = method SP request-target SP HTTP-version CRLF HTTP headers *)
 let[@warning "-3"] request =
@@ -48,7 +279,7 @@ let[@warning "-3"] request =
       | '0' -> return `HTTP_1_0
       | _ -> fail (Format.sprintf "Invalid HTTP version: %c" v)
     in
-    let+ headers = headers <* commit in
+    let+ headers = headers in
     {
       Http.Request.headers;
       meth;
@@ -58,7 +289,7 @@ let[@warning "-3"] request =
       encoding = Http.Header.get_transfer_encoding headers;
     }
   in
-  let eof = end_of_input >>| fun () -> raise Eof in
+  let eof = end_of_input >>| fun () -> Stdlib.raise_notrace End_of_file in
   eof <|> request
 
 (* Chunked encoding parser *)
@@ -150,7 +381,7 @@ let chunk (total_read : int) (req : Http.Request.t) =
          The spec at https://datatracker.ietf.org/doc/html/rfc7230#section-4.1.3
          specifies that 'Content-Length' and 'Transfer-Encoding' headers must be
          updated. *)
-      let* trailer_headers = headers <* commit in
+      let* trailer_headers = headers in
       let request_trailer_headers = request_trailer_headers req in
       let request_headers = Http.Request.headers req in
       let trailer_headers =
