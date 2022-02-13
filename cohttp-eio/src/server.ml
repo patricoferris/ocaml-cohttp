@@ -127,7 +127,7 @@ let run_domain (t : t) env =
                 Client_connection.flow;
                 addr;
                 switch = sw;
-                reader = Reader.create flow;
+                reader = Reader.create (flow :> Eio.Flow.source);
               }
             in
             handle_request t client_conn)

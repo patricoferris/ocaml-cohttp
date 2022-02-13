@@ -2,29 +2,38 @@
 module Reader : sig
   type t
 
-  val create : ?buffer_size:int -> #Eio.Flow.source -> t
+  type bigstring =
+    (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+  val create : ?buffer_size:int -> Eio.Flow.source -> t
   (** [create ?buffer_size reader] creates [t]. [buffer_size] is the maximum
       number of bytes [reader] attempts to read in one call. If [buffer_size] is
       not given then [default_io_buffer_size] is used. *)
-
-  val reader : t -> Eio.Flow.source
-  (** [reader t] returns the reader used by [t]. *)
-
-  val buffer_size : t -> int
-  (** [bufer_size t] returns the current [reader t] read buffer size. *)
 
   val default_io_buffer_size : int
   (** [default_io_buffer_size] is [4096]. *)
 
   (** {1 Low Level API} *)
 
+  val source : t -> Eio.Flow.source
+  (** [source t] returns the reader used by [t]. *)
+
+  val buffer : t -> bigstring
+  (** [buffer t] is the unconsumed bytes in [t]. *)
+
+  val length : t -> int
+  (** [length t] is the count of unconsumed bytes in [t]. *)
+
+  val buffer_size : t -> int
+  (** [bufer_size t] returns the read buffer size of [t] *)
+
   val consume : t -> int -> unit
   (** [consume t n] marks [n] bytes of data as consumed in [t]. *)
 
   val fill : t -> int -> unit
-  (** [feed_input t] is [buf]. Attempts to read at most [buffer_size t] bytes
-      into [t] and returns a view into unconsumed buffer represented by [buf].
-      [buf.len = 0] if [reader t] has reached end of file. *)
+  (** [fill t sz] attempts to read at least [sz] count of bytes into [t].
+
+      @raise End_of_file if [source t] has reached end of file. *)
 
   exception Parse_error of string
 
@@ -32,7 +41,8 @@ module Reader : sig
   (** [parse t p] is [a] after an Angstrom parser [p] is successfully executed
       over [t].
 
-      @raise Parse_error if an error is encountered during parsing. *)
+      @raise Parse_error if an error is encountered during parsing.
+      @raise End_of_file if [t] has reached end of file. *)
 end
 
 (** [Chunk] encapsulates HTTP/1.1 chunk transfer encoding data structures.

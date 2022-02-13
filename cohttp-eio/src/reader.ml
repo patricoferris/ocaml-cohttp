@@ -3,23 +3,26 @@ type t = {
   mutable buf : Bigstringaf.t;
   mutable off : int;
   mutable len : int;
-  reader : Eio.Flow.source;
+  source : Eio.Flow.source;
   buffer_size : int;
 }
 
+type bigstring =
+  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
 let default_io_buffer_size = 4096
 
-let create ?(buffer_size = default_io_buffer_size) reader =
+let create ?(buffer_size = default_io_buffer_size) source =
   assert (buffer_size > 0);
   let buf = Bigstringaf.create buffer_size in
   let off = 0 in
   let len = 0 in
-  { buf; off; len; reader = (reader :> Eio.Flow.source); buffer_size }
+  { buf; off; len; source; buffer_size }
 
-let reader t = t.reader
+let source t = t.source
 let buffer_size t = t.buffer_size
 let offset t = t.off
-let len t = t.len
+let length t = t.len
 let buffer t = t.buf
 
 let grow t size =
@@ -46,7 +49,7 @@ let fill t size =
   let to_read = grow t size in
   let write_off = t.off + t.len in
   let buf = Cstruct.of_bigarray ~off:write_off ~len:to_read t.buf in
-  let got = Eio.Flow.read t.reader buf in
+  let got = Eio.Flow.read t.source buf in
   t.len <- t.len + got
 
 exception Parse_error of string
