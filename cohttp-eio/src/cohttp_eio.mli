@@ -131,7 +131,7 @@ module Server : sig
   (** {1 Run Server} *)
 
   val create : ?socket_backlog:int -> ?domains:int -> port:int -> handler -> t
-  val run : t -> unit
+  val run : t -> Eio.Stdenv.t -> unit
   val close : t -> unit
 
   (** {1 Basic Handlers} *)

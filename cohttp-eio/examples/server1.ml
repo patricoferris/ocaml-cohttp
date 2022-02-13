@@ -44,4 +44,4 @@ let () =
     ignore "An HTTP/1.1 server";
 
   let server = Server.create ~port:!port app in
-  Server.run server
+  Eio_main.run @@ fun env -> Server.run server env

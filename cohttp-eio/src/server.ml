@@ -13,27 +13,10 @@ type t = {
 
 let close t = ignore @@ Atomic.compare_and_set t.closed false true
 
-let cpu_core_count =
-  match Sys.os_type with
-  | "Win32" -> int_of_string (Sys.getenv "NUMBER_OF_PROCESSORS")
-  | _ -> (
-      let i = Unix.open_process_in "getconf _NPROCESSORS_ONLN" in
-      let close () = ignore (Unix.close_process_in i) in
-      try
-        let in_channel = Scanf.Scanning.from_channel i in
-        Scanf.bscanf in_channel "%d" (fun n ->
-            close ();
-            n)
-      with e ->
-        close ();
-        raise e)
-  | (exception Not_found)
-  | (exception Sys_error _)
-  | (exception Failure _)
-  | (exception Scanf.Scan_failure _)
-  | (exception End_of_file)
-  | (exception Unix.Unix_error (_, _, _)) ->
-      1
+let domain_count =
+  match Sys.getenv_opt "COHTTP_DOMAINS" with
+  | Some d -> int_of_string d
+  | None -> 1
 
 (* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
 let write_chunked (client_conn : Client_connection.t) chunk_writer =
@@ -150,13 +133,12 @@ let run_domain (t : t) env =
             handle_request t client_conn)
       done)
 
-let create ?(socket_backlog = 10_000) ?(domains = cpu_core_count) ~port
+let create ?(socket_backlog = 10_000) ?(domains = domain_count) ~port
     request_handler : t =
   { socket_backlog; domains; port; request_handler; closed = Atomic.make false }
 
 (* wrk2 -t 24 -c 1000 -d 60s -R400000 http://localhost:8080 *)
-let run (t : t) =
-  Eio_main.run @@ fun env ->
+let run (t : t) env =
   Eio.Std.traceln "\nServer listening on 127.0.0.1:%d" t.port;
   Eio.Std.traceln "\nStarting %d domains ...%!" t.domains;
   Switch.run @@ fun sw ->
