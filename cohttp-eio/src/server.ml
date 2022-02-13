@@ -8,10 +8,10 @@ type t = {
   domains : int;
   port : int;
   request_handler : handler;
-  closed : bool Atomic.t;
+  stopped : bool Atomic.t;
 }
 
-let close t = ignore @@ Atomic.compare_and_set t.closed false true
+let stop t = ignore @@ Atomic.compare_and_set t.stopped false true
 
 let domain_count =
   match Sys.getenv_opt "COHTTP_DOMAINS" with
@@ -86,7 +86,7 @@ let rec handle_request (t : t) (conn : Client_connection.t) : unit =
       in
       let res = { res with headers = response_headers } in
       write_response conn { Response.res; body };
-      match (keep_alive, Atomic.get t.closed) with
+      match (keep_alive, Atomic.get t.stopped) with
       | _, true | false, _ -> Client_connection.close conn
       | true, false ->
           (* Drain unread bytes from client connection before
@@ -119,7 +119,7 @@ let run_domain (t : t) env =
           ~reuse_port:true ~backlog:t.socket_backlog
         @@ `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port)
       in
-      while not (Atomic.get t.closed) do
+      while not (Atomic.get t.stopped) do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
           (fun ~sw flow addr ->
             let client_conn =
@@ -135,7 +135,13 @@ let run_domain (t : t) env =
 
 let create ?(socket_backlog = 10_000) ?(domains = domain_count) ~port
     request_handler : t =
-  { socket_backlog; domains; port; request_handler; closed = Atomic.make false }
+  {
+    socket_backlog;
+    domains;
+    port;
+    request_handler;
+    stopped = Atomic.make false;
+  }
 
 (* wrk2 -t 24 -c 1000 -d 60s -R400000 http://localhost:8080 *)
 let run (t : t) env =
