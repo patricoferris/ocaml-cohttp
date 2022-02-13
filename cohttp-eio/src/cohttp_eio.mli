@@ -21,20 +21,10 @@ module Reader : sig
   val consume : t -> int -> unit
   (** [consume t n] marks [n] bytes of data as consumed in [t]. *)
 
-  val feed_input : t -> Cstruct.t
+  val fill : t -> int -> unit
   (** [feed_input t] is [buf]. Attempts to read at most [buffer_size t] bytes
       into [t] and returns a view into unconsumed buffer represented by [buf].
       [buf.len = 0] if [reader t] has reached end of file. *)
-
-  (** {2 High Level API} *)
-
-  val read_into : t -> off:int -> len:int -> Cstruct.buffer -> int
-  (** [read_into t ~off ~len buf] fills [buf] from [off] to length [len] with
-      data from [t]. *)
-
-  val read_char : t -> char
-  (** [read_char t] reads and returns [char] from [t] or raises [End_of_file] if
-      [t] has reached end of input.*)
 
   exception Parse_error of string
 

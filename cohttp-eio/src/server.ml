@@ -115,7 +115,9 @@ let rec handle_request (t : t) (conn : Client_connection.t) : unit =
             | _ -> ()
           else ();
           (handle_request [@tailcall]) t conn)
-  | exception Parser.Eof -> Client_connection.close conn
+  | exception End_of_file ->
+      Printf.eprintf "\nEnd_of_file%!";
+      Client_connection.close conn
   | exception Reader.Parse_error msg ->
       Printf.eprintf "\nRequest parsing error: %s%!" msg;
       write_response conn Response.bad_request
@@ -159,7 +161,7 @@ let run (t : t) =
   Eio.Std.traceln "\nStarting %d domains ...%!" t.domains;
   Switch.run @@ fun sw ->
   let domain_mgr = Eio.Stdenv.domain_mgr env in
-  for i = 2 to t.domains do
+  for _ = 2 to t.domains do
     Eio.Std.Fibre.fork ~sw (fun () ->
         Eio.Domain_manager.run domain_mgr (fun () -> run_domain t env))
   done;
