@@ -84,7 +84,7 @@ module Request : sig
 
   (** {1 Custom Request Body Readers} *)
 
-  val reader : t -> Reader.t
+  val reader : t -> Eio.Buf_read.t
   (** [reader t] returns a [Reader.t] instance. This can be used to create a
       custom request body reader. *)
 
@@ -200,6 +200,6 @@ module Private : sig
     val skip : (char -> bool) -> unit t
     val skip_while : (char -> bool) -> unit t
     val skip_many : 'a t -> unit t
-    val parse : Reader.t -> 'a t -> 'a
+    val parse : Eio.Buf_read.t -> 'a t -> 'a
   end
 end

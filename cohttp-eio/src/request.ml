@@ -1,6 +1,6 @@
 type t = {
   req : Http.Request.t;
-  reader : Reader.t;
+  reader : Eio.Buf_read.t;
   mutable read_complete : bool;
 }
 

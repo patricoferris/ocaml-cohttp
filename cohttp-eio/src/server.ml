@@ -118,7 +118,7 @@ let run_domain (t : t) env =
                 Client_connection.flow;
                 addr;
                 switch = sw;
-                reader = Reader.create (flow :> Eio.Flow.source);
+                reader = Eio.Buf_read.of_flow ~max_size:(4096 * 10) flow;
                 response_buf = Buffer.create 512;
               }
             in

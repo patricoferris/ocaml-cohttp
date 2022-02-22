@@ -14,23 +14,21 @@ module P = Private.Parser
 module R = Reader
 
 type 'a t = 
-{ reader_len: int
-; pos : int
+{ pos : int
 ; result : 'a
-; reader: Reader.t
+; reader: Eio.Buf_read.t
 }
 
 let pp = 
   let fields = 
-    [ Fmt.field "reader_len " (fun x -> x.reader_len) Fmt.int
-    ; Fmt.field "pos        " (fun x -> x.pos)        Fmt.int
+    [ Fmt.field "pos        " (fun x -> x.pos)        Fmt.int
     ; Fmt.field "result     " (fun x -> x.result)     Fmt.string
     ]
   in
   Fmt.braces @@ Fmt.record ~sep:Fmt.semi fields
 
 let pp_bigstring fmt bs = Format.fprintf fmt "%s" (Bigstringaf.to_string bs)
-let create_reader s = R.create @@ Eio.Flow.string_source s
+let create_reader s = Eio.Buf_read.of_flow ~max_size:(4096*10) (Eio.Flow.string_source s)
 
 let parse ?rdr p s = 
   let p = P.(lift2 (fun a pos -> (a, pos)) p pos) in
@@ -40,8 +38,7 @@ let parse ?rdr p s =
     | None -> create_reader s 
   in
   let (a, pos)  = P.parse rdr p in
-  { reader_len  = R.length rdr
-  ; pos
+  { pos
   ; result      = a
   ; reader      = rdr
   }
@@ -59,8 +56,7 @@ let p2 = P.fail "parse error"
 
 ```ocaml
 # parse p1 "";;
-- : string t = {reader_len : 0;
-                pos        : 0;
+- : string t = {pos        : 0;
                 result     : hello}
 # parse p2 "";;
 Exception: Cohttp_eio__Parser.P.Parse_failure "parse error".
@@ -76,15 +72,14 @@ let p4 = P.(string "GET" *> char ' ' *> char '/' *> char ' ')
 
 ```ocaml
 # parse p1 "GET / HTTP/1.1";;
-- : string t = {reader_len : 10;
-                pos        : 4;
-                result     : / HTTP/1.1}
+- : string t = {pos        : 4;
+                result     : GET / HTTP/1.1}
 # parse p2 "GET";;
-- : char t = {reader_len = 3; pos = 0; result = 'G'; reader = <abstr>}
+- : char t = {pos = 0; result = 'G'; reader = <abstr>}
 # parse p3 "ABA";;
-- : char t = {reader_len = 2; pos = 1; result = 'A'; reader = <abstr>}
+- : char t = {pos = 1; result = 'A'; reader = <abstr>}
 # parse p4 "GET / ";;
-- : char t = {reader_len = 0; pos = 6; result = ' '; reader = <abstr>}
+- : char t = {pos = 6; result = ' '; reader = <abstr>}
 ```
 
 ## Take: take_while, take_while1, take_bigstring, take
@@ -98,32 +93,26 @@ let p4 = P.take 4
 ```
 ```ocaml
 # parse p1 "ABCD";;
-- : string t = {reader_len : 1;
-                pos        : 3;
+- : string t = {pos        : 3;
                 result     : ABC}
 # parse p1 "DDD";;
-- : string t = {reader_len : 3;
-                pos        : 0;
+- : string t = {pos        : 0;
                 result     : }
 # parse p2 "ABCD";;
-- : string t = {reader_len : 1;
-                pos        : 3;
+- : string t = {pos        : 3;
                 result     : ABC}
 # parse p2 "DDD";;
 Exception:
 Cohttp_eio__Parser.P.Parse_failure "[take_while1] count is less than 1".
 # parse p3 "DDDD";;
-- : P.bigstring t =
-{reader_len = 0; pos = 4; result = DDDD; reader = <abstr>}
+- : P.bigstring t = {pos = 4; result = DDDD; reader = <abstr>}
 # parse p3 "DDD";;
-Exception:
-Cohttp_eio__Parser.P.Parse_failure "[take_bigstring] not enough input".
+Exception: End_of_file.
 # parse p4 "DDDD";;
-- : string t = {reader_len : 0;
-                pos        : 4;
+- : string t = {pos        : 4;
                 result     : DDDD}
 # parse p4 "DDD";;
-Exception: Cohttp_eio__Parser.P.Parse_failure "[take] not enough input".
+Exception: End_of_file.
 ```
 
 ## Skip: skip, skip_while, skip_many 
@@ -136,11 +125,11 @@ let p3 = P.(skip_many (satisfy f))
 ```
 ```ocaml
 # parse p1 "ABCD";;
-- : unit t = {reader_len = 3; pos = 1; result = (); reader = <abstr>}
+- : unit t = {pos = 1; result = (); reader = <abstr>}
 # parse p2 "ABCD";;
-- : unit t = {reader_len = 1; pos = 3; result = (); reader = <abstr>}
+- : unit t = {pos = 3; result = (); reader = <abstr>}
 # parse p3 "ABCD";;
-- : unit t = {reader_len = 1; pos = 3; result = (); reader = <abstr>}
+- : unit t = {pos = 3; result = (); reader = <abstr>}
 ```
 
 ## Reuse reader in-between parsing
@@ -150,9 +139,8 @@ let p4 = P.(char 'D' *> char ' ' *> string "hello world")
 ```
 ```ocaml
 # let r = parse p2 "ABCD hello world!";;
-val r : unit t = {reader_len = 14; pos = 3; result = (); reader = <abstr>}
+val r : unit t = {pos = 3; result = (); reader = <abstr>}
 # parse ~rdr:r.reader p4 "";;
-- : string t = {reader_len : 1;
-                pos        : 13;
+- : string t = {pos        : 13;
                 result     : hello world}
 ```
