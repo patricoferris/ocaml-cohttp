@@ -18,7 +18,7 @@ module P : sig
   val ( <|> ) : 'a t -> 'a t -> 'a t
   val lift : ('a -> 'b) -> 'a t -> 'b t
   val lift2 : ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
-  val end_of_input : unit t
+  val end_of_input : bool t
   val pos : int t
   val option : 'a -> 'a t -> 'a t
   val peek_char : char t
@@ -91,8 +91,8 @@ end = struct
   let end_of_input inp =
     try
       Eio.Buf_read.ensure inp.rdr 1;
-      fail "[end_of_input] not end_of_input" inp
-    with End_of_file -> return () inp
+      false
+    with End_of_file -> true
 
   let option : 'a -> 'a t -> 'a t = fun x p -> p <|> return x
 
@@ -253,31 +253,6 @@ let headers =
     (name, value)
   in
   many header <* crlf >>| Http.Header.of_list
-
-(*-- request-line = method SP request-target SP HTTP-version CRLF HTTP headers *)
-let[@warning "-3"] request =
-  let request =
-    let* meth = token >>| Http.Method.of_string <* space in
-    let* resource = take_while1 (fun c -> c != ' ') <* space in
-    let* version =
-      let* v = string "HTTP/1." *> digit <* crlf in
-      match v with
-      | '1' -> return `HTTP_1_1
-      | '0' -> return `HTTP_1_0
-      | _ -> fail (Format.sprintf "Invalid HTTP version: %c" v)
-    in
-    let+ headers = headers in
-    {
-      Http.Request.headers;
-      meth;
-      scheme = None;
-      resource;
-      version;
-      encoding = Http.Header.get_transfer_encoding headers;
-    }
-  in
-  let eof = end_of_input >>| fun () -> Stdlib.raise_notrace End_of_file in
-  eof <|> request
 
 (* Chunked encoding parser *)
 

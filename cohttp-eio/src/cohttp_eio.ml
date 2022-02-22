@@ -1,4 +1,6 @@
-module Reader = Reader
+(* module Reader = Reader *)
+module Version = Version
+module Method = Method
 module Chunk = Chunk
 module Request = Request
 module Response = Response

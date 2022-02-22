@@ -1,10 +1,10 @@
 type t = { res : Http.Response.t; body : body }
 
 and body =
-  [ `String of string
-  | `Chunked of write_chunk
-  | `Custom of Eio.Flow.sink -> unit
-  | `None ]
+  | String of string
+  | Chunked of write_chunk
+  | Custom of (Eio.Flow.sink -> unit)
+  | Empty
 
 and write_chunk = (Chunk.t -> unit) -> unit
 
@@ -29,7 +29,7 @@ let text body =
         ("content-length", string_of_int @@ String.length body);
       ]
   in
-  create ~headers (`String body)
+  create ~headers (String body)
 
 let html body =
   let headers = Http.Header.init () in
@@ -40,8 +40,8 @@ let html body =
         ("content-length", string_of_int @@ String.length body);
       ]
   in
-  create ~headers (`String body)
+  create ~headers (String body)
 
-let not_found = create ~status:`Not_found `None
-let internal_server_error = create ~status:`Internal_server_error `None
-let bad_request = create ~status:`Bad_request `None
+let not_found = create ~status:`Not_found Empty
+let internal_server_error = create ~status:`Internal_server_error Empty
+let bad_request = create ~status:`Bad_request Empty

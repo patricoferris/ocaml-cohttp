@@ -11,6 +11,15 @@ type t = {
   stopped : bool Atomic.t;
 }
 
+type client_conn = {
+  flow : < Eio.Flow.two_way ; Eio.Flow.close >;
+  addr : Eio.Net.Sockaddr.t;
+  reader : Eio.Buf_read.t;
+  response_buf : Buffer.t;
+  req : Request.t;
+}
+
+let close t = Eio.Flow.close t.flow
 let stop t = ignore @@ Atomic.compare_and_set t.stopped false true
 
 let domain_count =
@@ -19,7 +28,7 @@ let domain_count =
   | None -> 1
 
 (* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
-let write_chunked (client_conn : Client_connection.t) chunk_writer =
+let write_chunked (client_conn : client_conn) chunk_writer =
   let extensions exts =
     let buf = Buffer.create 0 in
     List.iter
@@ -44,7 +53,7 @@ let write_chunked (client_conn : Client_connection.t) chunk_writer =
   in
   chunk_writer write
 
-let write_response (client_conn : Client_connection.t) { Response.res; body } =
+let write_response (client_conn : client_conn) { Response.res; body } =
   Buffer.clear client_conn.response_buf;
   let buf = client_conn.response_buf in
   let version = Http.Response.version res |> Http.Version.to_string in
@@ -62,64 +71,66 @@ let write_response (client_conn : Client_connection.t) { Response.res; body } =
          Buffer.add_string buf "\r\n");
   Buffer.add_string buf "\r\n";
   match body with
-  | `String s ->
+  | String s ->
       Buffer.add_string buf s;
       Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow
-  | `Custom writer ->
+  | Custom writer ->
       Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow;
       writer (client_conn.flow :> Eio.Flow.sink)
-  | `Chunked chunk_writer ->
+  | Chunked chunk_writer ->
       Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow;
       write_chunked client_conn chunk_writer
-  | `None -> Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow
+  | Empty -> Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow
 
-let rec handle_request (t : t) (conn : Client_connection.t) : unit =
-  match Parser.(parse conn.reader request) with
-  | req -> (
-      let req = Request.{ req; reader = conn.reader; read_complete = false } in
-      let res = t.request_handler req in
-      write_response conn res;
-      match (Request.is_keep_alive req, Atomic.get t.stopped) with
-      | _, true | false, _ -> Client_connection.close conn
-      | true, false ->
-          (* Drain unread bytes from client connection before
-             reading another request. *)
-          (* if not req.read_complete then *)
-          (*   match Http.Header.get_transfer_encoding (Request.headers req) with *)
-          (*   | Http.Transfer.Fixed _ -> ignore @@ Request.read_fixed req *)
-          (*   | Http.Transfer.Chunked -> ignore @@ Request.read_chunk req ignore *)
-          (*   | _ -> () *)
-          (* else (); *)
-          handle_request t conn)
-  | exception End_of_file -> Client_connection.close conn
+let rec handle_request (t : t) (client_conn : client_conn) : unit =
+  match Request.parse_with client_conn.req with
+  | () -> (
+      let res = t.request_handler client_conn.req in
+      write_response client_conn res;
+      if Atomic.get t.stopped then close client_conn
+      else
+        match
+          ( Http.Header.get client_conn.req.headers "connection",
+            client_conn.req.version )
+        with
+        | Some "keep-alive", _ | _, Version.HTTP_1_1 ->
+            (* Drain unread bytes from client connection before
+               reading another request. *)
+            (* if not client_conn.req.read_complete then *)
+            (*   match Http.Header.get_transfer_encoding (Request.headers req) with *)
+            (*   | Http.Transfer.Fixed _ -> ignore @@ Request.read_fixed req *)
+            (*   | Http.Transfer.Chunked -> ignore @@ Request.read_chunk req ignore *)
+            (*   | _ -> () *)
+            (* else (); *)
+            handle_request t client_conn
+        | _, Version.HTTP_1_0 -> close client_conn)
+  | exception End_of_file -> close client_conn
   | exception Parser.Parse_failure msg ->
       Printf.eprintf "\nRequest parsing error: %s%!" msg;
-      write_response conn Response.bad_request
+      write_response client_conn Response.bad_request;
+      close client_conn
   | exception exn ->
       Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
-      write_response conn Response.internal_server_error
+      write_response client_conn Response.internal_server_error;
+      close client_conn
 
-let run_domain (t : t) env =
+let run_domain (t : t) ssock =
   let on_accept_error exn =
     Printf.fprintf stderr "Error while accepting connection: %s"
       (Printexc.to_string exn)
   in
   Switch.run (fun sw ->
-      let ssock =
-        Eio.Net.listen (Eio.Stdenv.net env) ~sw ~reuse_addr:true
-          ~reuse_port:true ~backlog:t.socket_backlog
-        @@ `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port)
-      in
       while not (Atomic.get t.stopped) do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
-          (fun ~sw flow addr ->
+          (fun ~sw:_ flow addr ->
+            let reader = Eio.Buf_read.of_flow ~max_size:(4096 * 5) flow in
             let client_conn =
               {
-                Client_connection.flow;
+                flow;
                 addr;
-                switch = sw;
-                reader = Eio.Buf_read.of_flow ~max_size:(4096 * 10) flow;
+                reader;
                 response_buf = Buffer.create 512;
+                req = Request.create reader;
               }
             in
             handle_request t client_conn)
@@ -136,25 +147,22 @@ let create ?(socket_backlog = 10_000) ?(domains = domain_count) ~port
   }
 
 (* wrk2 -t 24 -c 1000 -d 60s -R400000 http://localhost:8080 *)
-let run (t : t) env =
+let run (t : t) (env : Eio.Stdenv.t) =
   Eio.Std.traceln "\nServer listening on 127.0.0.1:%d" t.port;
   Eio.Std.traceln "\nStarting %d domains ...%!" t.domains;
   Switch.run @@ fun sw ->
   let domain_mgr = Eio.Stdenv.domain_mgr env in
+  let ssock =
+    Eio.Net.listen (Eio.Stdenv.net env) ~sw ~reuse_addr:true
+      ~backlog:t.socket_backlog
+    @@ `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port)
+  in
   for _ = 2 to t.domains do
     Eio.Std.Fibre.fork ~sw (fun () ->
-        Eio.Domain_manager.run domain_mgr (fun () -> run_domain t env))
+        Eio.Domain_manager.run domain_mgr (fun () -> run_domain t ssock))
   done;
-  run_domain t env
+  run_domain t ssock
 
 (* Basic handlers *)
 
 let not_found : handler = fun (_ : Request.t) -> Response.not_found
-
-(* Handler combinators *)
-
-(* let join h1 h2 req = match h1 req with Some _ as res -> res | None -> h2 req *)
-
-(* module Infix = struct *)
-(*   let ( >>? ) = join *)
-(* end *)
