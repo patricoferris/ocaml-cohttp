@@ -13,7 +13,6 @@ type t = {
 
 type client_conn = {
   flow : < Eio.Flow.two_way ; Eio.Flow.close >;
-  addr : Eio.Net.Sockaddr.t;
   reader : Eio.Buf_read.t;
   response_buf : Buffer.t;
   req : Request.t;
@@ -53,16 +52,17 @@ let write_chunked (client_conn : client_conn) chunk_writer =
   in
   chunk_writer write
 
-let write_response (client_conn : client_conn) { Response.res; body } =
+let write_response (client_conn : client_conn)
+    { Response.version; body; status; headers } =
   Buffer.clear client_conn.response_buf;
   let buf = client_conn.response_buf in
-  let version = Http.Response.version res |> Http.Version.to_string in
-  let status = Http.Response.status res |> Http.Status.to_string in
+  let version = Version.to_string version in
+  let status = Http.Status.to_string status in
   Buffer.add_string buf version;
   Buffer.add_string buf " ";
   Buffer.add_string buf status;
   Buffer.add_string buf "\r\n";
-  Http.Response.headers res
+  headers
   |> Http.Header.clean_dup
   |> Http.Header.iter (fun k v ->
          Buffer.add_string buf k;
@@ -122,12 +122,11 @@ let run_domain (t : t) ssock =
   Switch.run (fun sw ->
       while not (Atomic.get t.stopped) do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
-          (fun ~sw:_ flow addr ->
+          (fun ~sw:_ flow _ ->
             let reader = Eio.Buf_read.of_flow ~max_size:(4096 * 5) flow in
             let client_conn =
               {
                 flow;
-                addr;
                 reader;
                 response_buf = Buffer.create 512;
                 req = Request.create reader;
@@ -136,8 +135,8 @@ let run_domain (t : t) ssock =
             handle_request t client_conn)
       done)
 
-let create ?(socket_backlog = 10_000) ?(domains = domain_count) ~port
-    request_handler : t =
+let create ?(socket_backlog = 5) ?(domains = domain_count) ~port request_handler
+    =
   {
     socket_backlog;
     domains;

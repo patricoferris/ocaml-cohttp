@@ -74,7 +74,12 @@ module Response : sig
 
   and write_chunk = (Chunk.t -> unit) -> unit
 
-  val create : ?headers:Http.Header.t -> ?status:Http.Status.t -> body -> t
+  val create :
+    ?version:Version.t ->
+    ?headers:Http.Header.t ->
+    ?status:Http.Status.t ->
+    body ->
+    t
 
   (** {1 Response Details} *)
 

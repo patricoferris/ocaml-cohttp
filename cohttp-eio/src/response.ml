@@ -1,4 +1,9 @@
-type t = { res : Http.Response.t; body : body }
+type t = {
+  headers : Http.Header.t;
+  body : body;
+  status : Http.Status.t;
+  version : Version.t;
+}
 
 and body =
   | String of string
@@ -8,14 +13,14 @@ and body =
 
 and write_chunk = (Chunk.t -> unit) -> unit
 
-let create ?headers ?(status = `OK) body =
-  let res = Http.Response.make ?headers ~version:`HTTP_1_1 ~status () in
-  { res; body }
+let create ?(version = Version.HTTP_1_1) ?(headers = Http.Header.init ())
+    ?(status = `OK) body =
+  { headers; body; status; version }
 
 (* Response Details *)
 
-let headers t = t.res.headers
-let status t = t.res.status
+let headers t = t.headers
+let status t = t.status
 let body t = t.body
 
 (* Basic Response *)
