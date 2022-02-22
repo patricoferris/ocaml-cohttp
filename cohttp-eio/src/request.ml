@@ -3,7 +3,7 @@ type t = {
   mutable headers : Http.Header.t;
   mutable meth : Method.t;
   mutable resource : string;
-  reader : Eio.Buf_read.t;
+  reader : Reader.t;
   mutable read_complete : bool;
 }
 

@@ -16,6 +16,44 @@ module Method : sig
     | Other of string
 end
 
+(** [Reader] is a buffered reader. *)
+module Reader : sig
+  type t
+
+  type bigstring =
+    (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+  val create : ?buffer_size:int -> Eio.Flow.source -> t
+  (** [create ?buffer_size reader] creates [t]. [buffer_size] is the maximum
+      number of bytes [reader] attempts to read in one call. If [buffer_size] is
+      not given then [default_io_buffer_size] is used. *)
+
+  val default_io_buffer_size : int
+  (** [default_io_buffer_size] is [4096]. *)
+
+  (** {1 Low Level API} *)
+
+  val source : t -> Eio.Flow.source
+  (** [source t] returns the reader used by [t]. *)
+
+  (* val buffer : t -> bigstring *)
+  (** [buffer t] is the unconsumed bytes in [t]. *)
+
+  val length : t -> int
+  (** [length t] is the count of unconsumed bytes in [t]. *)
+
+  val buffer_size : t -> int
+  (** [bufer_size t] returns the read buffer size of [t] *)
+
+  val consume : t -> int -> unit
+  (** [consume t n] marks [n] bytes of data as consumed in [t]. *)
+
+  val fill : t -> int -> unit
+  (** [fill t sz] attempts to read at least [sz] count of bytes into [t].
+
+      @raise End_of_file if [source t] has reached end of file. *)
+end
+
 (** [Chunk] encapsulates HTTP/1.1 chunk transfer encoding data structures.
     https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
 module Chunk : sig
@@ -54,7 +92,7 @@ module Request : sig
 
   (** {1 Custom Request Body Readers} *)
 
-  val reader : t -> Eio.Buf_read.t
+  val reader : t -> Reader.t
   (** [reader t] returns a [Reader.t] instance. This can be used to create a
       custom request body reader. *)
 
@@ -164,6 +202,6 @@ module Private : sig
     val skip : (char -> bool) -> unit t
     val skip_while : (char -> bool) -> unit t
     val skip_many : 'a t -> unit t
-    val parse : Eio.Buf_read.t -> 'a t -> 'a
+    val parse : Reader.t -> 'a t -> 'a
   end
 end

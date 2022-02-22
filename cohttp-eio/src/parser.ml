@@ -35,12 +35,12 @@ module P : sig
   val skip : (char -> bool) -> unit t
   val skip_while : (char -> bool) -> unit t
   val skip_many : 'a t -> unit t
-  val parse : Eio.Buf_read.t -> 'a t -> 'a
+  val parse : Reader.t -> 'a t -> 'a
 end = struct
   type bigstring =
     (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
 
-  type input = { mutable pos : int; rdr : Eio.Buf_read.t }
+  type input = { mutable pos : int; rdr : Reader.t }
   type 'a t = input -> 'a
 
   exception Parse_failure of string
@@ -86,23 +86,27 @@ end = struct
     let b = q inp in
     f a b
 
+  let ensure inp len =
+    let len = inp.pos + len in
+    if inp.rdr.len < len then Reader.fill inp.rdr (len - inp.rdr.len)
+
   let pos inp = inp.pos
 
   let end_of_input inp =
     try
-      Eio.Buf_read.ensure inp.rdr 1;
+      ensure inp 1;
       false
     with End_of_file -> true
 
   let option : 'a -> 'a t -> 'a t = fun x p -> p <|> return x
 
   let peek_char inp =
-    Eio.Buf_read.ensure inp.rdr 1;
-    Cstruct.get_char (Eio.Buf_read.peek inp.rdr) inp.pos
+    ensure inp 1;
+    Bigstringaf.unsafe_get inp.rdr.buf (inp.rdr.off + inp.pos)
 
   let peek_string n inp =
-    Eio.Buf_read.ensure inp.rdr n;
-    Cstruct.to_string (Eio.Buf_read.peek inp.rdr)
+    ensure inp n;
+    Bigstringaf.substring inp.rdr.buf ~off:(inp.rdr.off + inp.pos) ~len:n
 
   let sprintf = Printf.sprintf
 
@@ -122,13 +126,13 @@ end = struct
 
   let string s inp =
     let len = String.length s in
-    Eio.Buf_read.ensure inp.rdr len;
+    ensure inp len;
     let pos = inp.pos in
     let i = ref 0 in
     while
       !i < len
       && Char.equal
-           (Cstruct.get_char (Eio.Buf_read.peek inp.rdr) (pos + !i))
+           (Bigstringaf.unsafe_get inp.rdr.buf (inp.rdr.off + pos + !i))
            (String.unsafe_get s !i)
     do
       incr i
@@ -143,8 +147,8 @@ end = struct
     let pos = ref inp.pos in
     let continue = ref true in
     while !continue do
-      Eio.Buf_read.ensure inp.rdr 1;
-      let c = Cstruct.get_char (Eio.Buf_read.peek inp.rdr) !pos in
+      ensure inp 1;
+      let c = Bigstringaf.unsafe_get inp.rdr.buf (inp.rdr.off + !pos) in
       if f c then incr pos else continue := false
     done;
     !pos - old_pos
@@ -154,7 +158,8 @@ end = struct
     if count < 1 then fail "[take_while1] count is less than 1" inp
     else
       let s =
-        Cstruct.to_string (Eio.Buf_read.peek inp.rdr) ~off:inp.pos ~len:count
+        Bigstringaf.substring inp.rdr.buf ~off:(inp.rdr.off + inp.pos)
+          ~len:count
       in
       inp.pos <- inp.pos + count;
       s
@@ -163,7 +168,8 @@ end = struct
     let count = count_while inp f in
     if count > 0 then (
       let s =
-        Cstruct.to_string (Eio.Buf_read.peek inp.rdr) ~off:inp.pos ~len:count
+        Bigstringaf.substring inp.rdr.buf ~off:(inp.rdr.off + inp.pos)
+          ~len:count
       in
       inp.pos <- inp.pos + count;
       s)
@@ -171,17 +177,24 @@ end = struct
 
   let take_bigstring : int -> bigstring t =
    fun n inp ->
-    Eio.Buf_read.ensure inp.rdr n;
-    let s = Cstruct.sub (Eio.Buf_read.peek inp.rdr) inp.pos n in
-    inp.pos <- inp.pos + n;
-    Cstruct.to_bigarray s
+    ensure inp n;
+    if Reader.length inp.rdr < n then
+      fail "[take_bigstring] not enough input" inp
+    else
+      let s = Bigstringaf.sub inp.rdr.buf ~off:(inp.rdr.off + inp.pos) ~len:n in
+      inp.pos <- inp.pos + n;
+      s
 
   let take : int -> string t =
    fun n inp ->
-    Eio.Buf_read.ensure inp.rdr n;
-    let s = Cstruct.to_string (Eio.Buf_read.peek inp.rdr) ~off:inp.pos ~len:n in
-    inp.pos <- inp.pos + n;
-    s
+    ensure inp n;
+    if Reader.length inp.rdr < n then fail "[take] not enough input" inp
+    else
+      let s =
+        Bigstringaf.substring inp.rdr.buf ~off:(inp.rdr.off + inp.pos) ~len:n
+      in
+      inp.pos <- inp.pos + n;
+      s
 
   let rec many p inp =
     try
@@ -197,8 +210,8 @@ end = struct
     with Parse_failure _ -> []
 
   let skip f inp =
-    Eio.Buf_read.ensure inp.rdr 1;
-    let c = Cstruct.get (Eio.Buf_read.peek inp.rdr) inp.pos in
+    ensure inp 1;
+    let c = Bigstringaf.unsafe_get inp.rdr.buf (inp.rdr.off + inp.pos) in
     if f c then inp.pos <- inp.pos + 1 else fail "[skip]" inp
 
   let skip_while f inp =
@@ -208,11 +221,11 @@ end = struct
   let rec skip_many p inp =
     match p inp with _ -> skip_many p inp | exception Parse_failure _ -> ()
 
-  let parse : Eio.Buf_read.t -> 'a t -> 'a =
+  let parse : Reader.t -> 'a t -> 'a =
    fun rdr p ->
     let inp = { pos = 0; rdr } in
     let a = p inp in
-    Eio.Buf_read.consume rdr inp.pos;
+    Reader.consume rdr inp.pos;
     a
 end
 

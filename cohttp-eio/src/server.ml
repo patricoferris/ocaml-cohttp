@@ -13,7 +13,7 @@ type t = {
 
 type client_conn = {
   flow : < Eio.Flow.two_way ; Eio.Flow.close >;
-  reader : Eio.Buf_read.t;
+  reader : Reader.t;
   response_buf : Buffer.t;
   req : Request.t;
 }
@@ -123,7 +123,7 @@ let run_domain (t : t) ssock =
       while not (Atomic.get t.stopped) do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
           (fun ~sw:_ flow _ ->
-            let reader = Eio.Buf_read.of_flow ~max_size:(4096 * 5) flow in
+            let reader = Reader.create (flow :> Eio.Flow.source) in
             let client_conn =
               {
                 flow;
