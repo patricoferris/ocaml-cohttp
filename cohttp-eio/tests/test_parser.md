@@ -30,7 +30,13 @@ let pp =
   Fmt.braces @@ Fmt.record ~sep:Fmt.semi fields
 
 let pp_bigstring fmt bs = Format.fprintf fmt "%s" (Bigstringaf.to_string bs)
-let create_reader s = R.create @@ Eio.Flow.string_source s
+let create_reader s = 
+  let flow = Eio.Flow.string_source s in
+  let read_fn cs = 
+    try Eio.Flow.read flow cs
+    with End_of_file -> 0 
+  in
+  R.create 1 read_fn 
 
 let parse ?rdr p s = 
   let p = P.(lift2 (fun a pos -> (a, pos)) p pos) in
@@ -65,6 +71,7 @@ let p2 = P.fail "parse error"
 # parse p2 "";;
 Exception: Cohttp_eio__Parser.P.Parse_failure "parse error".
 ```
+
 ## String/Char: char, satisfy, string, peek_string, peek_char, *>, <*
 
 ```ocaml
@@ -79,10 +86,13 @@ let p4 = P.(string "GET" *> char ' ' *> char '/' *> char ' ')
 - : string t = {reader_len : 10;
                 pos        : 4;
                 result     : / HTTP/1.1}
+
 # parse p2 "GET";;
-- : char t = {reader_len = 3; pos = 0; result = 'G'; reader = <abstr>}
+- : char t = {reader_len = 1; pos = 0; result = 'G'; reader = <abstr>}
+
 # parse p3 "ABA";;
-- : char t = {reader_len = 2; pos = 1; result = 'A'; reader = <abstr>}
+- : char t = {reader_len = 0; pos = 1; result = 'A'; reader = <abstr>}
+
 # parse p4 "GET / ";;
 - : char t = {reader_len = 0; pos = 6; result = ' '; reader = <abstr>}
 ```
@@ -101,29 +111,42 @@ let p4 = P.take 4
 - : string t = {reader_len : 1;
                 pos        : 3;
                 result     : ABC}
+
 # parse p1 "DDD";;
-- : string t = {reader_len : 3;
+- : string t = {reader_len : 1;
                 pos        : 0;
                 result     : }
+
 # parse p2 "ABCD";;
 - : string t = {reader_len : 1;
                 pos        : 3;
                 result     : ABC}
+```
+
+```ocaml
 # parse p2 "DDD";;
 Exception:
 Cohttp_eio__Parser.P.Parse_failure "[take_while1] count is less than 1".
+
 # parse p3 "DDDD";;
 - : P.bigstring t =
 {reader_len = 0; pos = 4; result = DDDD; reader = <abstr>}
+
 # parse p3 "DDD";;
 Exception:
 Cohttp_eio__Parser.P.Parse_failure "[take_bigstring] not enough input".
+
 # parse p4 "DDDD";;
 - : string t = {reader_len : 0;
                 pos        : 4;
                 result     : DDDD}
 # parse p4 "DDD";;
 Exception: Cohttp_eio__Parser.P.Parse_failure "[take] not enough input".
+
+# parse (P.(string "GET" *> char ' ' *> take_while1 (fun c -> c != ' '))) "GET /hello  ";;
+- : string t = {reader_len : 2;
+                pos        : 10;
+                result     : /hello}
 ```
 
 ## Skip: skip, skip_while, skip_many 
@@ -134,25 +157,40 @@ let p1 = P.skip f
 let p2 = P.skip_while f
 let p3 = P.(skip_many (satisfy f))
 ```
+
 ```ocaml
 # parse p1 "ABCD";;
-- : unit t = {reader_len = 3; pos = 1; result = (); reader = <abstr>}
+- : unit t = {reader_len = 0; pos = 1; result = (); reader = <abstr>}
+
 # parse p2 "ABCD";;
 - : unit t = {reader_len = 1; pos = 3; result = (); reader = <abstr>}
+
 # parse p3 "ABCD";;
 - : unit t = {reader_len = 1; pos = 3; result = (); reader = <abstr>}
 ```
-
 ## Reuse reader in-between parsing
 
 ```ocaml
 let p4 = P.(char 'D' *> char ' ' *> string "hello world")
 ```
+
 ```ocaml
 # let r = parse p2 "ABCD hello world!";;
-val r : unit t = {reader_len = 14; pos = 3; result = (); reader = <abstr>}
+val r : unit t = {reader_len = 7; pos = 3; result = (); reader = <abstr>}
+
 # parse ~rdr:r.reader p4 "";;
 - : string t = {reader_len : 1;
                 pos        : 13;
                 result     : hello world}
 ```
+
+## end_of_input
+
+```ocaml
+# parse (P.end_of_input) "";;
+- : bool t = {reader_len = 0; pos = 0; result = true; reader = <abstr>}
+
+# parse (P.end_of_input) "a";;
+- : bool t = {reader_len = 1; pos = 0; result = false; reader = <abstr>}
+```
+

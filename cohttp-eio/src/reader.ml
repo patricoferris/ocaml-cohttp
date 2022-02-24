@@ -1,52 +1,62 @@
 (* Based on https://github.com/inhabitedtype/angstrom/blob/master/lib/buffering.ml *)
 type t = {
+  read_fn : Cstruct.t -> int; (* Return 0 to indicate End_of_file. *)
   mutable buf : Bigstringaf.t;
   mutable off : int;
   mutable len : int;
-  source : Eio.Flow.source;
-  buffer_size : int;
+  mutable eof_seen : bool;
 }
 
-type bigstring =
-  (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
-
-let default_io_buffer_size = 512
-
-let create ?(buffer_size = default_io_buffer_size) source =
-  assert (buffer_size > 0);
-  let buf = Bigstringaf.create buffer_size in
+let create len read_fn =
+  assert (len > 0);
+  let buf = Bigstringaf.create len in
   let off = 0 in
-  let len = 0 in
-  { buf; off; len; source; buffer_size }
+  let got = read_fn (Cstruct.of_bigarray buf ~off ~len) in
+  { buf; off = 0; len = got; read_fn; eof_seen = got = 0 }
 
-let source t = t.source
-let buffer_size t = t.buffer_size
-let offset t = t.off
 let length t = t.len
+let writable_space t = Bigstringaf.length t.buf - t.len
+let trailing_space t = Bigstringaf.length t.buf - (t.off + t.len)
+let buffer t = Bigstringaf.sub t.buf ~off:t.off ~len:t.len
 
-let grow t size =
-  let extra_len =
-    let x = size / t.buffer_size in
-    let rem = size mod t.buffer_size in
-    let x = if rem > 0 then x + 1 else x in
-    x * t.buffer_size
-  in
-  let new_buf = Bigstringaf.create (t.len + extra_len) in
+let compress t =
+  Bigstringaf.unsafe_blit t.buf ~src_off:t.off t.buf ~dst_off:0 ~len:t.len;
+  t.off <- 0
+
+let grow t to_copy =
+  let old_len = Bigstringaf.length t.buf in
+  let new_len = ref old_len in
+  let space = writable_space t in
+  while space + !new_len - old_len < to_copy do
+    new_len := 3 * (!new_len + 1) / 2
+  done;
+  let new_buf = Bigstringaf.create !new_len in
   Bigstringaf.unsafe_blit t.buf ~src_off:t.off new_buf ~dst_off:0 ~len:t.len;
   t.buf <- new_buf;
-  t.off <- 0;
-  extra_len
+  t.off <- 0
+
+let adjust_buffer t to_read =
+  if trailing_space t < to_read then
+    if writable_space t < to_read then grow t to_read else compress t
 
 let consume t n =
   assert (t.len >= n);
   t.off <- t.off + n;
-  t.len <- t.len - n;
-  Bigstringaf.unsafe_blit t.buf ~src_off:t.off t.buf ~dst_off:0 ~len:t.len;
-  t.off <- 0
+  t.len <- t.len - n
 
-let fill t size =
-  let to_read = grow t size in
-  let write_off = t.off + t.len in
-  let buf = Cstruct.of_bigarray t.buf ~off:write_off ~len:to_read in
-  let got = Eio.Flow.read t.source buf in
-  t.len <- t.len + got
+let fill t to_read =
+  if t.eof_seen then 0
+  else (
+    adjust_buffer t to_read;
+    let off = t.off + t.len in
+    let len = trailing_space t in
+    let buf = Cstruct.of_bigarray t.buf ~off ~len in
+    let got = t.read_fn buf in
+    (* Printf.printf "\n[fill] off:%d, len:%d, got:%d, to_read:%d%!" off len got *)
+    (*   to_read; *)
+    if got = 0 then (
+      t.eof_seen <- true;
+      0)
+    else (
+      t.len <- t.len + got;
+      got))
