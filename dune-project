@@ -1,8 +1,10 @@
-(lang dune 2.9)
+(lang dune 3.0)
 
 (name cohttp)
 
 (license ISC)
+
+(using mdx 0.2)
 
 (maintainers "Anil Madhavapeddy <anil@recoil.org>")
 
@@ -250,4 +252,3 @@
   (http
    (= :version))
   angstrom))
-(using mdx 0.1)

@@ -1,5 +1,17 @@
 module Version : sig
   type t = HTTP_1_1 | HTTP_1_0
+
+  val to_string : t -> string
+
+  val of_string : string -> t
+  (** [of_string s] converts string [s] to [t].
+
+      [HTTP/1.0] is converted to [HTTP_1_0] [http/1.1] IS converted to
+      [HTTP_1_1]
+
+      @raise if [s] is neither of above. *)
+
+  val compare : t -> t -> int
 end
 
 module Method : sig
@@ -14,18 +26,102 @@ module Method : sig
     | TRACE
     | CONNECT
     | Other of string
+
+  val to_string : t -> string
+  val of_string : string -> t
+  val compare : t -> t -> int
+end
+
+module Header : sig
+  type t
+
+  val create : int -> t
+  (** [create n] creates [t] with initial buffer size of [n] *)
+
+  (** {1 Add HTTP header elements} *)
+
+  val add_header : t -> string * string -> unit
+  val add : t -> string -> string -> t
+  val add_unless_exists : t -> string -> string -> t
+  val add_list : t -> (string * string) list -> t
+  val add_multi : t -> string -> string list -> t
+
+  (** {1 Find headers} *)
+
+  val find : t -> string -> string
+  (** [find t key] returns value [v] associated with header key [key].
+
+      @raise Not_found if header with [key] is not found in [t]. *)
+
+  val find_opt : t -> string -> string option
+  (** [find_opt t key] returns [Some v] for header with [key] in [t]. None if
+      [key] is not found in [t] *)
+
+  val find_multi : t -> string -> string list
+  (** [find_multi t key] returns all values associated with header with [key]. *)
+
+  val mem : t -> string -> bool
+  (**[mem t key] returns [true] if [key] is found in [t]. *)
+
+  (** {1 Remove Headers} *)
+
+  val remove : t -> string -> t
+  (** [remove t key] removes header with [key] in [t].
+
+      @raise Not_found if [key] doesn't exist in [t]. *)
+
+  (** {1 Update Header} *)
+
+  val replace : t -> string -> string -> t
+  (** [replace t key value] replaces the value of the first HTTP header
+      associated with [key]. *)
+
+  val update : t -> string -> (string option -> string option) -> t
+
+  (** {1 Iterators} *)
+
+  val iter : (string -> string -> unit) -> t -> unit
+  val map : (string -> string -> string) -> t -> t
+  val fold_left : (string -> string -> 'a -> 'a) -> 'a -> t -> 'a
+
+  (** {1 Header properties} *)
+
+  val is_empty : t -> bool
+
+  val length : t -> int
+  (** [length t] returns the count of headers in [t]. *)
+
+  val is_keep_alive : t -> bool
+  (** [is_keep_alive t] returns [true] if [t] holds header
+      ["Connection","keep-alive"], [false] otherwise. *)
+
+  (** {1 Compare} *)
+
+  val compare : t -> t -> int
+
+  (** {1 Clear} *)
+
+  val clear : t -> unit
+  (** [clear t] clears the current headers in [t]. *)
+
+  (** {1 Conversions/} *)
+
+  val to_string : t -> string
+
+  (**{1 Printers} *)
+
+  val pp : Format.formatter -> t -> unit
 end
 
 (** [Reader] is a buffered reader. *)
 module Reader : sig
   type t
 
-  val create : int -> (Cstruct.t -> int) -> t
+  val create : int -> (Bigstringaf.t -> off:int -> len:int -> int) -> t
   (** [create len read_fn] returns [t] with an initial buffer of size [len].
-      [read_fn] is the read function used to fill [t]. *)
 
-  val buffer : t -> Bigstringaf.t
-  (** [buffer t] is the unconsumed bytes in [t]. *)
+      [read_fn] is the read function used to fill [t]. It returns the count of
+      bytes read and returns [0] if end of file is reached. *)
 
   val length : t -> int
   (** [length t] is the count of unconsumed bytes in [t]. *)
@@ -36,6 +132,11 @@ module Reader : sig
   val fill : t -> int -> int
   (** [fill t n] attempts to fill [t] with [n] bytes. It returns [0] if end of
       file is reached. Otherwise it return the number of bytes stored in [t]. *)
+
+  val clear : t -> unit
+  val unsafe_get : t -> int -> char
+  val substring : t -> off:int -> len:int -> string
+  val copy : t -> off:int -> len:int -> Bigstringaf.t
 end
 
 (** [Chunk] encapsulates HTTP/1.1 chunk transfer encoding data structures.
@@ -55,7 +156,7 @@ module Request : sig
   (** {1 Request Details} *)
 
   (* val has_body : t -> [ `No | `Unknown | `Yes ] *)
-  val headers : t -> Http.Header.t
+  val headers : t -> Header.t
   val meth : t -> Method.t
   val resource : t -> string
   val version : t -> Version.t
@@ -150,15 +251,14 @@ end
 
 module Private : sig
   module Parser : sig
-    type 'a t
-
-    type bigstring =
-      (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+    type 'a t = Reader.t -> 'a
 
     exception Parse_failure of string
 
     val return : 'a -> 'a t
     val fail : string -> 'a t
+    val commit : unit t
+    val pos : int t
     val ( <?> ) : 'a t -> string -> 'a t
     val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
     val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
@@ -170,22 +270,21 @@ module Private : sig
     val lift : ('a -> 'b) -> 'a t -> 'b t
     val lift2 : ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
     val end_of_input : bool t
-    val pos : int t
     val option : 'a -> 'a t -> 'a t
     val peek_char : char t
     val peek_string : int -> string t
-    val char : char -> char t
+    val char : char -> unit t
+    val any_char : char t
     val satisfy : (char -> bool) -> char t
-    val string : string -> string t
+    val string : string -> unit t
     val take_while1 : (char -> bool) -> string t
     val take_while : (char -> bool) -> string t
-    val take_bigstring : int -> bigstring t
+    val take_bigstring : int -> Bigstringaf.t t
     val take : int -> string t
+    val take_till : (char -> bool) -> string t
     val many : 'a t -> 'a list t
-    val many_till : 'a t -> _ t -> 'a list t
     val skip : (char -> bool) -> unit t
     val skip_while : (char -> bool) -> unit t
     val skip_many : 'a t -> unit t
-    val parse : Reader.t -> 'a t -> 'a
   end
 end

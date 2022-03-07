@@ -2,8 +2,4 @@
  (name cohttp_eio)
  (public_name cohttp-eio)
  (ocamlopt_flags -S -dcmm -dump-into-file)
- (libraries eio cstruct http angstrom))
-
-(mdx
- (package cohttp-eio)
- (packages cohttp-eio))
+ (libraries eio cstruct http angstrom unix))

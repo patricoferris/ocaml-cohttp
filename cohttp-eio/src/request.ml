@@ -1,6 +1,6 @@
 type t = {
   mutable version : Version.t;
-  mutable headers : Http.Header.t;
+  headers : Header.t;
   mutable meth : Method.t;
   mutable resource : string;
   reader : Reader.t;
@@ -12,44 +12,67 @@ let headers t = t.headers
 let meth t = t.meth
 let resource t = t.resource
 let version t = t.version
+let is_keep_alive t = Header.is_keep_alive t.headers
 
-let create reader =
+let create ?(initial_header_len = 15) reader =
   {
     version = Version.HTTP_1_1;
-    headers = Http.Header.init ();
+    headers = Header.create initial_header_len;
     meth = Method.Other "";
     reader;
     resource = "";
     read_complete = false;
   }
 
-let is_keep_alive t =
-  match Http.Header.get t.headers "connection" with
-  | Some v when v = "keep-alive" -> true
-  | Some _ | _ -> false
+module P = Parser
 
-let parse_with (r : t) : unit =
-  let open Parser in
-  let p =
-    end_of_input >>= function
-    | true -> Stdlib.raise_notrace End_of_file
-    | false ->
-        let* meth = token <* space in
-        let* resource = take_while1 (fun c -> c != ' ') <* space in
-        let* version =
-          string "HTTP/1." *> digit <* crlf >>= function
-          | '1' -> return Version.HTTP_1_1
-          | '0' -> return Version.HTTP_1_0
-          | v -> fail (Format.sprintf "Invalid HTTP version: %c" v)
-        in
-        let+ headers = headers in
-        r.version <- version;
-        r.headers <- headers;
-        r.meth <- Method.of_string meth;
-        r.resource <- resource;
-        r.read_complete <- false
-  in
-  parse r.reader p
+let token =
+  P.take_while1 (function
+    | '0' .. '9'
+    | 'a' .. 'z'
+    | 'A' .. 'Z'
+    | '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '.' | '^' | '_'
+    | '`' | '|' | '~' ->
+        true
+    | _ -> false)
+
+let ows = P.skip_while (function ' ' | '\t' -> true | _ -> false)
+let crlf = P.string "\r\n"
+let is_cr = function '\r' -> true | _ -> false
+let space = P.char '\x20'
+let p_meth = P.(token <* space >>| Method.of_string)
+let p_resource = P.(take_while1 (fun c -> c != ' ') <* space)
+
+let p_version =
+  P.(
+    string "HTTP/1." *> any_char <* crlf >>= function
+    | '1' -> return Version.HTTP_1_1
+    | '0' -> return Version.HTTP_1_0
+    | v -> fail (Format.sprintf "Invalid HTTP version: %C" v))
+
+let p_header =
+  P.(
+    lift2
+      (fun key value -> (key, value))
+      (token <* char ':' <* ows)
+      (take_till is_cr <* crlf))
+
+let rec p_headers : Header.t -> unit P.t =
+ fun hdrs inp ->
+  p_header inp |> Header.add_header hdrs;
+  match P.peek_char inp with '\r' -> crlf inp | _ -> p_headers hdrs inp
+
+let parse_into (t : t) =
+  Header.clear t.headers;
+  match P.end_of_input t.reader with
+  | true -> Stdlib.raise_notrace End_of_file
+  | false ->
+      t.meth <- p_meth t.reader;
+      t.resource <- p_resource t.reader;
+      t.version <- p_version t.reader;
+      p_headers t.headers t.reader;
+      P.commit t.reader;
+      t.read_complete <- false
 
 (* let read_fixed t = *)
 (*   match Http.Header.get_transfer_encoding t.headers with *)

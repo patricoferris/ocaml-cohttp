@@ -74,23 +74,32 @@ let write_response response_buf flow { Response.version; body; status; headers }
       write_chunked flow chunk_writer
   | Empty -> Eio.Flow.copy_string (Buffer.contents buf) flow
 
+let read_fn flow buf ~off ~len =
+  try
+    let cs = Cstruct.of_bigarray ~off ~len buf in
+    Eio.Flow.read flow cs
+  with End_of_file -> 0
+
 let handle_request (t : t) flow _addr : unit =
-  let read_fn cs = try Eio.Flow.read flow cs with End_of_file -> 0 in
-  let reader = Reader.create 512 read_fn in
+  let reader = Reader.create 1024 (read_fn flow) in
   let req = Request.create reader in
-  let response_buf = Buffer.create 512 in
+  let response_buf = Buffer.create 1024 in
   let rec loop () =
-    traceln "parsing request";
-    match Request.parse_with req with
+    match Request.parse_into req with
     | () -> (
         let res = t.request_handler req in
         write_response response_buf flow res;
         if Atomic.get t.stopped then Eio.Flow.close flow
         else
-          match (Http.Header.get req.headers "connection", req.version) with
-          | Some "keep-alive", _ | _, Version.HTTP_1_1 -> loop ()
-          | _, Version.HTTP_1_0 -> Eio.Flow.close flow)
-    | exception End_of_file ->  Eio.Flow.close flow
+          match (Request.is_keep_alive req, req.version) with
+          | true, Version.HTTP_1_0 | _, Version.HTTP_1_1 ->
+              Reader.clear reader;
+              let _ = Reader.fill reader 512 in
+              loop ()
+          | false, Version.HTTP_1_0 -> Eio.Flow.close flow)
+    | exception End_of_file ->
+        Eio.traceln "Connection closed by client";
+        Eio.Flow.close flow
     | exception Parser.Parse_failure msg ->
         Printf.eprintf "\nRequest parsing error: %s%!" msg;
         write_response response_buf flow Response.bad_request;
@@ -111,9 +120,7 @@ let run_domain (t : t) ssock =
   Switch.run (fun sw ->
       while not (Atomic.get t.stopped) do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
-          (fun ~sw:_ flow addr ->
-            traceln "Connected: %a" Eio.Net.Sockaddr.pp addr;
-            handle_request t flow addr)
+          (fun ~sw:_ flow addr -> handle_request t flow addr)
       done)
 
 let create ?(socket_backlog = 10_000) ?(domains = domain_count) ~port
