@@ -4,7 +4,6 @@ type t = {
   mutable meth : Method.t;
   mutable resource : string;
   reader : Reader.t;
-  mutable read_complete : bool;
 }
 
 let reader t = t.reader
@@ -21,8 +20,11 @@ let create ?(initial_header_len = 15) reader =
     meth = Method.Other "";
     reader;
     resource = "";
-    read_complete = false;
   }
+
+let clear t =
+  Header.clear t.headers;
+  Reader.clear t.reader
 
 module P = Parser
 
@@ -63,7 +65,6 @@ let rec p_headers : Header.t -> unit P.t =
   match P.peek_char inp with '\r' -> crlf inp | _ -> p_headers hdrs inp
 
 let parse_into (t : t) =
-  Header.clear t.headers;
   match P.end_of_input t.reader with
   | true -> Stdlib.raise_notrace End_of_file
   | false ->
@@ -71,8 +72,7 @@ let parse_into (t : t) =
       t.resource <- p_resource t.reader;
       t.version <- p_version t.reader;
       p_headers t.headers t.reader;
-      P.commit t.reader;
-      t.read_complete <- false
+      P.commit t.reader
 
 (* let read_fixed t = *)
 (*   match Http.Header.get_transfer_encoding t.headers with *)
@@ -102,5 +102,3 @@ let parse_into (t : t) =
 (*     in *)
 (*     chunk_loop *)
 (* | _ -> fun _ -> Error "Request is not a chunked request" *)
-
-let set_read_complete t = t.read_complete <- true

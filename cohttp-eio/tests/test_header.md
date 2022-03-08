@@ -26,50 +26,33 @@ Use `add`, `add_header`, `add_multi` and `add_list` to add headers. Duplicates -
 - : unit = ()
 
 # Header.add t "nm3" "val3";;
-- : Header.t = Header [ length=3 {nm1 = "val1"; nm2 = "val2"; nm3 = "val3" }]
+- : unit = ()
 
 # Header.add t "nm4" "val4";;
-- : Header.t = Header [ length=4
-{nm1 = "val1"; nm2 = "val2"; nm3 = "val3"; nm4 = "val4" }]
+- : unit = ()
 
 # Header.add t "nm4" "val4_2";;
-- : Header.t = Header [ length=5
-{nm1 = "val1"; nm2 = "val2"; nm3 = "val3"; nm4 = "val4"; nm4 = "val4_2" }]
+- : unit = ()
 
 # Header.add_multi t "mult_key" ["mult_v1"; "mult_v2"];;
-- : Header.t = Header [ length=7
-{nm1 = "val1"; nm2 = "val2"; nm3 = "val3"; nm4 = "val4"; nm4 = "val4_2";
- mult_key = "mult_v1"; mult_key = "mult_v2"
-}]
+- : unit = ()
 
 # Header.add_list t [("list_nm1", "list_v1"); ("list_nm2", "list_v2")];;
-- : Header.t = Header [ length=9
-{nm1 = "val1"; nm2 = "val2"; nm3 = "val3"; nm4 = "val4"; nm4 = "val4_2";
- mult_key = "mult_v1"; mult_key = "mult_v2"; list_nm1 = "list_v1";
- list_nm2 = "list_v2"
-}]
+- : unit = ()
 ```
 
 `add_unless_exists` adds header iff the key doesn't already exist. Below "nm1" already exists so it isn't added again.
 
 ```ocaml
 # Header.add_unless_exists t "nm1" "val";;
-- : Header.t = Header [ length=9
-{nm1 = "val1"; nm2 = "val2"; nm3 = "val3"; nm4 = "val4"; nm4 = "val4_2";
- mult_key = "mult_v1"; mult_key = "mult_v2"; list_nm1 = "list_v1";
- list_nm2 = "list_v2"
-}]
+- : unit = ()
 ```
 
 "new1" doesn't exist yet so it is added to `t`.
 
 ```ocaml
 # Header.add_unless_exists t "new1" "new_val1";;
-- : Header.t = Header [ length=10
-{nm1 = "val1"; nm2 = "val2"; nm3 = "val3"; nm4 = "val4"; nm4 = "val4_2";
- mult_key = "mult_v1"; mult_key = "mult_v2"; list_nm1 = "list_v1";
- list_nm2 = "list_v2"; new1 = "new_val1"
-}]
+- : unit = ()
 ```
 
 ## Query Header.t  
@@ -128,27 +111,16 @@ Exception: Not_found.
 
 ```ocaml
 # Header.remove t "nm1";;
-- : Header.t = Header [ length=9
-{nm2 = "val2"; nm3 = "val3"; nm4 = "val4"; nm4 = "val4_2";
- mult_key = "mult_v1"; mult_key = "mult_v2"; list_nm1 = "list_v1";
- list_nm2 = "list_v2"; new1 = "new_val1"
-}]
+- : unit = ()
 
 # Header.remove t "new1";;
-- : Header.t = Header [ length=8
-{nm2 = "val2"; nm3 = "val3"; nm4 = "val4"; nm4 = "val4_2";
- mult_key = "mult_v1"; mult_key = "mult_v2"; list_nm1 = "list_v1";
- list_nm2 = "list_v2"
-}]
+- : unit = ()
 ```
 
 header with key "nm4" has 2 entries. Both of them will be removed by `remove`.
 ```ocaml
 # Header.remove t "nm4";;
-- : Header.t = Header [ length=6
-{nm2 = "val2"; nm3 = "val3"; mult_key = "mult_v1"; mult_key = "mult_v2";
- list_nm1 = "list_v1"; list_nm2 = "list_v2"
-}]
+- : unit = ()
 
 # Header.remove t "non_existent";;
 Exception: Not_found.
@@ -158,17 +130,10 @@ Exception: Not_found.
 
 ```ocaml
 # Header.replace t "nm2" "replaced_value";;
-- : Header.t = Header [ length=6
-{nm2 = "replaced_value"; nm3 = "val3"; mult_key = "mult_v1";
- mult_key = "mult_v2"; list_nm1 = "list_v1"; list_nm2 = "list_v2"
-}]
+- : unit = ()
 
 # Header.replace t "new2" "new2_value";;
-- : Header.t = Header [ length=7
-{nm2 = "replaced_value"; nm3 = "val3"; mult_key = "mult_v1";
- mult_key = "mult_v2"; list_nm1 = "list_v1"; list_nm2 = "list_v2";
- new2 = "new2_value"
-}]
+- : unit = ()
 ```
 
 ## Clear Header.t

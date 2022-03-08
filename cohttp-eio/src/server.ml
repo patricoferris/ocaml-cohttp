@@ -1,6 +1,6 @@
 open Eio.Std
 
-type handler = Request.t -> Response.t
+type handler = Request.t * Response.t -> unit
 type middleware = handler -> handler
 
 type t = {
@@ -18,62 +18,6 @@ let domain_count =
   | Some d -> int_of_string d
   | None -> 1
 
-(* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
-let write_chunked flow chunk_writer =
-  let extensions exts =
-    let buf = Buffer.create 0 in
-    List.iter
-      (fun { Chunk.name; value } ->
-        let v =
-          match value with None -> "" | Some v -> Printf.sprintf "=%s" v
-        in
-        Printf.sprintf ";%s%s" name v |> Buffer.add_string buf)
-      exts;
-    Buffer.contents buf
-  in
-  let write = function
-    | Chunk.Chunk { size; data; extensions = exts } ->
-        let buf =
-          Printf.sprintf "%X%s\r\n%s\r\n" size (extensions exts)
-            (Cstruct.to_string data)
-        in
-        Eio.Flow.copy_string buf flow
-    | Chunk.Last_chunk exts ->
-        let buf = Printf.sprintf "%X%s\r\n" 0 (extensions exts) in
-        Eio.Flow.copy_string buf flow
-  in
-  chunk_writer write
-
-let write_response response_buf flow { Response.version; body; status; headers }
-    =
-  Buffer.clear response_buf;
-  let buf = response_buf in
-  let version = Version.to_string version in
-  let status = Http.Status.to_string status in
-  Buffer.add_string buf version;
-  Buffer.add_string buf " ";
-  Buffer.add_string buf status;
-  Buffer.add_string buf "\r\n";
-  headers
-  |> Http.Header.clean_dup
-  |> Http.Header.iter (fun k v ->
-         Buffer.add_string buf k;
-         Buffer.add_string buf ": ";
-         Buffer.add_string buf v;
-         Buffer.add_string buf "\r\n");
-  Buffer.add_string buf "\r\n";
-  match body with
-  | String s ->
-      Buffer.add_string buf s;
-      Eio.Flow.copy_string (Buffer.contents buf) flow
-  | Custom writer ->
-      Eio.Flow.copy_string (Buffer.contents buf) flow;
-      writer (flow :> Eio.Flow.sink)
-  | Chunked chunk_writer ->
-      Eio.Flow.copy_string (Buffer.contents buf) flow;
-      write_chunked flow chunk_writer
-  | Empty -> Eio.Flow.copy_string (Buffer.contents buf) flow
-
 let read_fn flow buf ~off ~len =
   try
     let cs = Cstruct.of_bigarray ~off ~len buf in
@@ -82,19 +26,21 @@ let read_fn flow buf ~off ~len =
 
 let handle_request (t : t) flow _addr : unit =
   let reader = Reader.create 1024 (read_fn flow) in
-  let req = Request.create reader in
-  let response_buf = Buffer.create 1024 in
+  let request = Request.create reader in
+  let response =
+    Response.(create (flow :> Eio.Flow.sink) (Header.create 15) Empty)
+  in
   let rec loop () =
-    match Request.parse_into req with
+    match Request.parse_into request with
     | () -> (
-        let res = t.request_handler req in
-        write_response response_buf flow res;
+        t.request_handler (request, response);
+        Response.write response;
         if Atomic.get t.stopped then Eio.Flow.close flow
         else
-          match (Request.is_keep_alive req, req.version) with
+          match (Request.is_keep_alive request, request.version) with
           | true, Version.HTTP_1_0 | _, Version.HTTP_1_1 ->
-              Reader.clear reader;
-              let _ = Reader.fill reader 512 in
+              Request.clear request;
+              Response.clear response;
               loop ()
           | false, Version.HTTP_1_0 -> Eio.Flow.close flow)
     | exception End_of_file ->
@@ -102,11 +48,13 @@ let handle_request (t : t) flow _addr : unit =
         Eio.Flow.close flow
     | exception Parser.Parse_failure msg ->
         Printf.eprintf "\nRequest parsing error: %s%!" msg;
-        write_response response_buf flow Response.bad_request;
+        Response.bad_request response;
+        Response.write response;
         Eio.Flow.close flow
     | exception exn ->
         Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
-        write_response response_buf flow Response.internal_server_error;
+        Response.internal_server_error response;
+        Response.write response;
         Eio.Flow.close flow
   in
   loop ()
@@ -152,4 +100,4 @@ let run (t : t) (env : Eio.Stdenv.t) =
 
 (* Basic handlers *)
 
-let not_found : handler = fun (_ : Request.t) -> Response.not_found
+let not_found (_, response) = Response.not_found response

@@ -20,15 +20,9 @@ let add_header t hdr =
   Array.unsafe_set t.headers t.len hdr;
   t.len <- succ t.len
 
-let add t k v : t =
-  add_header t (k, v);
-  t
-
-let add_list t l : t =
-  List.iter (add_header t) l;
-  t
-
-let add_multi t k l = List.fold_left (fun t v -> add t k v) t l
+let add t k v = add_header t (k, v)
+let add_list t l = List.iter (add_header t) l
+let add_multi t k l = List.iter (fun v -> add_header t (k, v)) l
 
 external string_unsafe_get64 : string -> int -> int64 = "%caml_string_get64u"
 
@@ -84,7 +78,7 @@ let mem t k =
   in
   loop 0
 
-let add_unless_exists t k v = if mem t k then t else add t k v
+let add_unless_exists t k v = if mem t k then () else add t k v
 
 (* find *)
 let findi t k =
@@ -136,19 +130,16 @@ let remove t k =
         loop true i)
       else loop seen (succ i)
   in
-  loop false 0;
-  t
+  loop false 0
 
 (* update *)
 
 let replace t k v =
   match findi t k with
-  | i ->
-      Array.unsafe_set t.headers i (k, v);
-      t
+  | i -> Array.unsafe_set t.headers i (k, v)
   | exception Not_found -> add t k v
 
-let update t k f : t =
+let update t k f =
   match f (find_opt t k) with None -> remove t k | Some v -> replace t k v
 
 let iter (f : string -> string -> unit) t : unit =

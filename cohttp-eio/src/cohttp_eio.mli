@@ -1,3 +1,4 @@
+(** [Version] is a HTTP version *)
 module Version : sig
   type t = HTTP_1_1 | HTTP_1_0
 
@@ -14,6 +15,7 @@ module Version : sig
   val compare : t -> t -> int
 end
 
+(** [Method] is a HTTP method. *)
 module Method : sig
   type t =
     | GET
@@ -32,19 +34,24 @@ module Method : sig
   val compare : t -> t -> int
 end
 
+(** [Header] represents a collection of HTTP header values in Request and
+    Response. *)
 module Header : sig
   type t
 
   val create : int -> t
   (** [create n] creates [t] with initial buffer size of [n] *)
 
-  (** {1 Add HTTP header elements} *)
+  val empty : t
+  (** [empty] is an empty header. *)
+
+  (** {1 Add HTTP header} *)
 
   val add_header : t -> string * string -> unit
-  val add : t -> string -> string -> t
-  val add_unless_exists : t -> string -> string -> t
-  val add_list : t -> (string * string) list -> t
-  val add_multi : t -> string -> string list -> t
+  val add : t -> string -> string -> unit
+  val add_unless_exists : t -> string -> string -> unit
+  val add_list : t -> (string * string) list -> unit
+  val add_multi : t -> string -> string list -> unit
 
   (** {1 Find headers} *)
 
@@ -65,18 +72,18 @@ module Header : sig
 
   (** {1 Remove Headers} *)
 
-  val remove : t -> string -> t
+  val remove : t -> string -> unit
   (** [remove t key] removes header with [key] in [t].
 
       @raise Not_found if [key] doesn't exist in [t]. *)
 
   (** {1 Update Header} *)
 
-  val replace : t -> string -> string -> t
+  val replace : t -> string -> string -> unit
   (** [replace t key value] replaces the value of the first HTTP header
       associated with [key]. *)
 
-  val update : t -> string -> (string option -> string option) -> t
+  val update : t -> string -> (string option -> string option) -> unit
 
   (** {1 Iterators} *)
 
@@ -155,7 +162,6 @@ module Request : sig
 
   (** {1 Request Details} *)
 
-  (* val has_body : t -> [ `No | `Unknown | `Yes ] *)
   val headers : t -> Header.t
   val meth : t -> Method.t
   val resource : t -> string
@@ -180,9 +186,6 @@ module Request : sig
   val reader : t -> Reader.t
   (** [reader t] returns a [Reader.t] instance. This can be used to create a
       custom request body reader. *)
-
-  val set_read_complete : t -> unit
-  (** [set_read_complet t] indicates that request [t] body has been read. *)
 end
 
 (** [Response] is a HTTP/1.1 response. *)
@@ -197,43 +200,43 @@ module Response : sig
 
   and write_chunk = (Chunk.t -> unit) -> unit
 
-  val create :
-    ?version:Version.t ->
-    ?headers:Http.Header.t ->
-    ?status:Http.Status.t ->
-    body ->
-    t
-
   (** {1 Response Details} *)
 
-  val headers : t -> Http.Header.t
+  val headers : t -> Header.t
   val status : t -> Http.Status.t
   val body : t -> body
 
-  (** {1 Basic Response} *)
+  (** {1 Configure Response} *)
 
-  val text : string -> t
-  (** [text s] is a HTTP/1.1, 200 status response with header "Content-Type:
-      text/plain". *)
+  val set_body : t -> body -> unit
+  val set_status : t -> Http.Status.t -> unit
+  val set_version : t -> Version.t -> unit
 
-  val html : string -> t
-  (** [html s] is a HTTP/1.1, 200 status response with header "Content-Type:
-      text/html". *)
+  (** {1 Configuring Basic Response} *)
 
-  val not_found : t
-  (** [not_found] is a HTTP/1.1, 404 status response. *)
+  val text : t -> string -> unit
+  (** [text t s] configures [t] as a HTTP/1.1 response with "Content-Type"
+      header set to "text/plain" and status to [200]. *)
 
-  val internal_server_error : t
-  (** [internal_server_error] is a HTTP/1.1, 500 status response. *)
+  val html : t -> string -> unit
+  (** [html t s] configures [t] as a HTTP/1.1, 200 status response with header
+      "Content-Type: text/html". *)
 
-  val bad_request : t
-  (** [bad_request] is a HTTP/1.1, 400 status response. *)
+  val not_found : t -> unit
+  (** [not_found t] configures [t] as a HTTP/1.1, 404 status response. *)
+
+  val internal_server_error : t -> unit
+  (** [internal_server_error t] configures [t] as a HTTP/1.1, 500 status
+      response. *)
+
+  val bad_request : t -> unit
+  (** [bad_request t] configures [t] as a HTTP/1.1, 400 status response. *)
 end
 
 (** [Server] is a HTTP 1.1 server. *)
 module Server : sig
   type t
-  type handler = Request.t -> Response.t
+  type handler = Request.t * Response.t -> unit
   type middleware = handler -> handler
 
   (** {1 Run Server} *)
