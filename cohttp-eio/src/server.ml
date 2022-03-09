@@ -99,13 +99,13 @@ let rec handle_request (t : t) (conn : Client_connection.t) : unit =
           else ();
           (handle_request [@tailcall]) t conn)
   | exception End_of_file ->
-      Printf.eprintf "\nEnd_of_file%!";
+      Printf.printf "\nClosing connection%!";
       Client_connection.close conn
   | exception Reader.Parse_error msg ->
-      Printf.eprintf "\nRequest parsing error: %s%!" msg;
+      Printf.printf "\nRequest parsing error: %s%!" msg;
       write_response conn Response.bad_request
   | exception exn ->
-      Printf.eprintf "\nUnhandled exception: %s" (Printexc.to_string exn);
+      Printf.printf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
       write_response conn Response.internal_server_error
 
 let run_domain (t : t) env =
@@ -113,25 +113,24 @@ let run_domain (t : t) env =
     Printf.fprintf stderr "Error while accepting connection: %s"
       (Printexc.to_string exn)
   in
-  Switch.run (fun sw ->
-      let ssock =
-        Eio.Net.listen (Eio.Stdenv.net env) ~sw ~reuse_addr:true
-          ~reuse_port:true ~backlog:t.socket_backlog
-        @@ `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port)
-      in
-      while not (Atomic.get t.stopped) do
-        Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
-          (fun ~sw flow addr ->
-            let client_conn =
-              {
-                Client_connection.flow;
-                addr;
-                switch = sw;
-                reader = Reader.create (flow :> Eio.Flow.source);
-              }
-            in
-            handle_request t client_conn)
-      done)
+  Switch.run @@ fun sw ->
+  let ssock =
+    Eio.Net.listen (Eio.Stdenv.net env) ~sw ~reuse_addr:true ~reuse_port:true
+      ~backlog:t.socket_backlog
+    @@ `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port)
+  in
+  while not (Atomic.get t.stopped) do
+    Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error (fun ~sw flow addr ->
+        let client_conn =
+          {
+            Client_connection.flow;
+            addr;
+            switch = sw;
+            reader = Reader.create 1024 (flow :> Eio.Flow.source);
+          }
+        in
+        handle_request t client_conn)
+  done
 
 let create ?(socket_backlog = 10_000) ?(domains = domain_count) ~port
     request_handler : t =
@@ -158,11 +157,3 @@ let run (t : t) env =
 (* Basic handlers *)
 
 let not_found : handler = fun (_ : Request.t) -> Response.not_found
-
-(* Handler combinators *)
-
-(* let join h1 h2 req = match h1 req with Some _ as res -> res | None -> h2 req *)
-
-(* module Infix = struct *)
-(*   let ( >>? ) = join *)
-(* end *)

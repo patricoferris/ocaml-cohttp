@@ -17,38 +17,38 @@ let optional x = option None (x >>| Option.some)
 let is_vchar = function '\x21' .. '\x7E' -> true | _ -> false
 let vchar = satisfy (function '\x21' .. '\x7E' -> true | _ -> false)
 let digit = satisfy (function '0' .. '9' -> true | _ -> false)
+let is_cr = function '\r' -> true | _ -> false
 let crlf = string "\r\n" <?> "[crlf]"
 
 (*-- https://datatracker.ietf.org/doc/html/rfc7230#section-3.2 --*)
-let headers =
-  let header =
-    let* name = token <* char ':' <* ows in
-    let+ value =
-      take_while (function
-        | '\x21' .. '\x7E' -> true (* vchar*)
-        | ' ' | '\t' -> true
-        | _ -> false)
-      <* crlf
-    in
-    (name, value)
-  in
-  many header <* crlf <* commit >>| Http.Header.of_list
+let header =
+  lift2
+    (fun key value -> (key, value))
+    (token <* char ':' <* ows)
+    (take_till is_cr <* crlf)
 
-exception Eof
+let headers =
+  let cons x xs = x :: xs in
+  fix (fun headers ->
+      let _emp = return [] in
+      let _rec = lift2 cons header headers in
+      peek_char_fail >>= function '\r' -> _emp | _ -> _rec)
+  >>| Http.Header.of_list
+
+let version =
+  let* v = string "HTTP/1." *> digit <* crlf in
+  match v with
+  | '1' -> return `HTTP_1_1
+  | '0' -> return `HTTP_1_0
+  | _ -> fail (Format.sprintf "Invalid HTTP version: %c" v)
 
 (*-- request-line = method SP request-target SP HTTP-version CRLF HTTP headers *)
 let[@warning "-3"] request =
   let request =
     let* meth = token >>| Http.Method.of_string <* space in
     let* resource = take_while1 (fun c -> c != ' ') <* space in
-    let* version =
-      let* v = string "HTTP/1." *> digit <* crlf in
-      match v with
-      | '1' -> return `HTTP_1_1
-      | '0' -> return `HTTP_1_0
-      | _ -> fail (Format.sprintf "Invalid HTTP version: %c" v)
-    in
-    let+ headers = headers <* commit in
+    let* version = version <* commit in
+    let+ headers = headers <* crlf <* commit in
     {
       Http.Request.headers;
       meth;
@@ -58,7 +58,7 @@ let[@warning "-3"] request =
       encoding = Http.Header.get_transfer_encoding headers;
     }
   in
-  let eof = end_of_input >>| fun () -> raise Eof in
+  let eof = end_of_input >>| fun () -> raise End_of_file in
   eof <|> request
 
 (* Chunked encoding parser *)
