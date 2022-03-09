@@ -3,6 +3,8 @@ type t = {
   switch : Eio.Std.Switch.t;
   addr : Eio.Net.Sockaddr.t;
   reader : Reader.t;
+  response_buffer : Buffer.t;
 }
 
 let close t = Eio.Flow.close t.flow
+let clear t = Buffer.clear t.response_buffer

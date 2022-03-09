@@ -19,73 +19,17 @@ let domain_count =
   | None -> 1
 
 (* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
-let write_chunked (client_conn : Client_connection.t) chunk_writer =
-  let extensions exts =
-    let buf = Buffer.create 0 in
-    List.iter
-      (fun { Chunk.name; value } ->
-        let v =
-          match value with None -> "" | Some v -> Printf.sprintf "=%s" v
-        in
-        Printf.sprintf ";%s%s" name v |> Buffer.add_string buf)
-      exts;
-    Buffer.contents buf
-  in
-  let write = function
-    | Chunk.Chunk { size; data; extensions = exts } ->
-        let buf =
-          Printf.sprintf "%X%s\r\n%s\r\n" size (extensions exts)
-            (Cstruct.to_string data)
-        in
-        Eio.Flow.copy_string buf client_conn.flow
-    | Chunk.Last_chunk exts ->
-        let buf = Printf.sprintf "%X%s\r\n" 0 (extensions exts) in
-        Eio.Flow.copy_string buf client_conn.flow
-  in
-  chunk_writer write
-
-let write_response (client_conn : Client_connection.t) { Response.res; body } =
-  let buf = Buffer.create 1024 in
-  let version = Http.Response.version res |> Http.Version.to_string in
-  let status = Http.Response.status res |> Http.Status.to_string in
-  Buffer.add_string buf version;
-  Buffer.add_string buf " ";
-  Buffer.add_string buf status;
-  Buffer.add_string buf "\r\n";
-  Http.Response.headers res
-  |> Http.Header.clean_dup
-  |> Http.Header.iter (fun k v ->
-         Buffer.add_string buf k;
-         Buffer.add_string buf ": ";
-         Buffer.add_string buf v;
-         Buffer.add_string buf "\r\n");
-  Buffer.add_string buf "\r\n";
-  match body with
-  | `String s ->
-      Buffer.add_string buf s;
-      Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow
-  | `Custom writer ->
-      Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow;
-      writer (client_conn.flow :> Eio.Flow.sink)
-  | `Chunked chunk_writer ->
-      Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow;
-      write_chunked client_conn chunk_writer
-  | `None -> Eio.Flow.copy_string (Buffer.contents buf) client_conn.flow
 
 let rec handle_request (t : t) (conn : Client_connection.t) : unit =
   match Reader.parse conn.reader Parser.request with
   | req -> (
       let req = Request.{ req; reader = conn.reader; read_complete = false } in
-      let { Response.res; body } = t.request_handler req in
+      let response = t.request_handler req in
       let keep_alive = Request.is_keep_alive req in
-      let response_headers =
-        Http.Header.add_unless_exists
-          (Http.Response.headers res)
-          "connection"
-          (if keep_alive then "keep-alive" else "close")
-      in
-      let res = { res with headers = response_headers } in
-      write_response conn { Response.res; body };
+      response.headers <-
+        Http.Header.add_unless_exists response.headers "connection"
+          (if keep_alive then "keep-alive" else "close");
+      Response.write conn response;
       match (keep_alive, Atomic.get t.stopped) with
       | _, true | false, _ -> Client_connection.close conn
       | true, false ->
@@ -99,14 +43,14 @@ let rec handle_request (t : t) (conn : Client_connection.t) : unit =
           else ();
           (handle_request [@tailcall]) t conn)
   | exception End_of_file ->
-      Printf.printf "\nClosing connection%!";
+      Printf.eprintf "\nClosing connection%!";
       Client_connection.close conn
   | exception Reader.Parse_error msg ->
-      Printf.printf "\nRequest parsing error: %s%!" msg;
-      write_response conn Response.bad_request
+      Printf.eprintf "\nRequest parsing error: %s%!" msg;
+      Response.write conn Response.bad_request
   | exception exn ->
-      Printf.printf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
-      write_response conn Response.internal_server_error
+      Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
+      Response.write conn Response.internal_server_error
 
 let run_domain (t : t) env =
   let on_accept_error exn =
@@ -127,6 +71,7 @@ let run_domain (t : t) env =
             addr;
             switch = sw;
             reader = Reader.create 1024 (flow :> Eio.Flow.source);
+            response_buffer = Buffer.create 1024;
           }
         in
         handle_request t client_conn)
