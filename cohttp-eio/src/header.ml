@@ -1,13 +1,13 @@
 type t = { mutable headers : (string * string) Array.t; mutable len : int }
 
 let create len : t = { headers = Array.make len ("", ""); len = 0 }
-let empty = create 0
+let init () = create 0
 
 let resize t =
   let old_len = t.len in
   let new_len = ref old_len in
   while old_len >= !new_len do
-    new_len := 2 * !new_len
+    new_len := 2 * (!new_len + 1)
   done;
   let new_headers = Array.make !new_len ("", "") in
   Array.blit t.headers 0 new_headers 0 t.len;

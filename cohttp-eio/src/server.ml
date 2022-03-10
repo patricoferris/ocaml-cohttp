@@ -1,6 +1,6 @@
 open Eio.Std
 
-type handler = Request.t * Response.t -> unit
+type handler = Request.t -> Response.t
 type middleware = handler -> handler
 
 type t = {
@@ -27,20 +27,18 @@ let read_fn flow buf ~off ~len =
 let handle_request (t : t) flow _addr : unit =
   let reader = Reader.create 1024 (read_fn flow) in
   let request = Request.create reader in
-  let response =
-    Response.(create (flow :> Eio.Flow.sink) (Header.create 15) Empty)
-  in
+  let response_buffer = Buffer.create 1024 in
+  let sink = (flow :> Eio.Flow.sink) in
   let rec loop () =
     match Request.parse_into request with
     | () -> (
-        t.request_handler (request, response);
-        Response.write response;
+        let response = t.request_handler request in
+        Response.write response response_buffer sink;
         if Atomic.get t.stopped then Eio.Flow.close flow
         else
           match (Request.is_keep_alive request, request.version) with
           | true, Version.HTTP_1_0 | _, Version.HTTP_1_1 ->
               Request.clear request;
-              Response.clear response;
               loop ()
           | false, Version.HTTP_1_0 -> Eio.Flow.close flow)
     | exception End_of_file ->
@@ -48,13 +46,11 @@ let handle_request (t : t) flow _addr : unit =
         Eio.Flow.close flow
     | exception Parser.Parse_failure msg ->
         Printf.eprintf "\nRequest parsing error: %s%!" msg;
-        Response.bad_request response;
-        Response.write response;
+        Response.(write bad_request response_buffer sink);
         Eio.Flow.close flow
     | exception exn ->
         Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
-        Response.internal_server_error response;
-        Response.write response;
+        Response.(write internal_server_error response_buffer sink);
         Eio.Flow.close flow
   in
   loop ()
@@ -100,4 +96,4 @@ let run (t : t) (env : Eio.Stdenv.t) =
 
 (* Basic handlers *)
 
-let not_found (_, response) = Response.not_found response
+let not_found _ = Response.not_found

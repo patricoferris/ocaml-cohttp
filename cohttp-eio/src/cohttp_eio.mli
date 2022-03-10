@@ -42,8 +42,8 @@ module Header : sig
   val create : int -> t
   (** [create n] creates [t] with initial buffer size of [n] *)
 
-  val empty : t
-  (** [empty] is an empty header. *)
+  val init : unit -> t
+  (** [init ()] is an empty header. *)
 
   (** {1 Add HTTP header} *)
 
@@ -206,37 +206,30 @@ module Response : sig
   val status : t -> Http.Status.t
   val body : t -> body
 
-  (** {1 Configure Response} *)
-
-  val set_body : t -> body -> unit
-  val set_status : t -> Http.Status.t -> unit
-  val set_version : t -> Version.t -> unit
-
   (** {1 Configuring Basic Response} *)
 
-  val text : t -> string -> unit
-  (** [text t s] configures [t] as a HTTP/1.1 response with "Content-Type"
-      header set to "text/plain" and status to [200]. *)
+  val text : string -> t
+  (** [text t s] returns a HTTP/1.1, 200 status response with "Content-Type"
+      header set to "text/plain". *)
 
-  val html : t -> string -> unit
-  (** [html t s] configures [t] as a HTTP/1.1, 200 status response with header
+  val html : string -> t
+  (** [html t s] returns a HTTP/1.1, 200 status response with header set to
       "Content-Type: text/html". *)
 
-  val not_found : t -> unit
-  (** [not_found t] configures [t] as a HTTP/1.1, 404 status response. *)
+  val not_found : t
+  (** [not_found t] returns a HTTP/1.1, 404 status response. *)
 
-  val internal_server_error : t -> unit
-  (** [internal_server_error t] configures [t] as a HTTP/1.1, 500 status
-      response. *)
+  val internal_server_error : t
+  (** [internal_server_error] returns a HTTP/1.1, 500 status response. *)
 
-  val bad_request : t -> unit
-  (** [bad_request t] configures [t] as a HTTP/1.1, 400 status response. *)
+  val bad_request : t
+  (** [bad_request t] returns a HTTP/1.1, 400 status response. *)
 end
 
 (** [Server] is a HTTP 1.1 server. *)
 module Server : sig
   type t
-  type handler = Request.t * Response.t -> unit
+  type handler = Request.t -> Response.t
   type middleware = handler -> handler
 
   (** {1 Run Server} *)

@@ -30,12 +30,12 @@ let text =
 
 open Cohttp_eio
 
-let app (req, res) =
+let app req =
   match Request.resource req with
-  | "/" -> Response.text res text
-  | "/html" -> Response.html res text
+  | "/" -> Response.text text
+  | "/html" -> Response.html text
   | "/exit" -> exit 0
-  | _ -> Response.not_found res
+  | _ -> Response.not_found
 
 let () =
   let port = ref 8081 in
