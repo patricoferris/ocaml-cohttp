@@ -33,20 +33,20 @@ let rec handle_request t request response_buffer flow sink =
       else
         match (Request.is_keep_alive request, request.version) with
         | true, Version.HTTP_1_0 | _, Version.HTTP_1_1 ->
-            Request.clear request;
-            handle_request t request response_buffer flow sink
+          Request.clear request;
+          handle_request t request response_buffer flow sink
         | false, Version.HTTP_1_0 -> Eio.Flow.close flow)
   | exception End_of_file ->
-      Eio.traceln "Connection closed by client";
-      Eio.Flow.close flow
+    Eio.traceln "Connection closed by client";
+    Eio.Flow.close flow
   | exception Parser.Parse_failure msg ->
-      Printf.eprintf "\nRequest parsing error: %s%!" msg;
-      Response.(write bad_request response_buffer sink);
-      Eio.Flow.close flow
+    Printf.eprintf "\nRequest parsing error: %s%!" msg;
+    Response.(write bad_request response_buffer sink);
+    Eio.Flow.close flow
   | exception exn ->
-      Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
-      Response.(write internal_server_error response_buffer sink);
-      Eio.Flow.close flow
+    Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
+    Response.(write internal_server_error response_buffer sink);
+    Eio.Flow.close flow
 
 let run_domain (t : t) ssock =
   traceln "Running server in domain %d" (Domain.self () :> int);
@@ -58,14 +58,14 @@ let run_domain (t : t) ssock =
       while not (Atomic.get t.stopped) do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
           (fun ~sw:_ flow _addr ->
-            let reader = Reader.create 1024 (read_fn flow) in
-            let request = Request.create reader in
-            let response_buffer = Buffer.create 1024 in
-            let sink = (flow :> Eio.Flow.sink) in
-            handle_request t request response_buffer flow sink)
+             let reader = Reader.create 1024 (read_fn flow) in
+             let request = Request.create reader in
+             let response_buffer = Buffer.create 1024 in
+             let sink = (flow :> Eio.Flow.sink) in
+             handle_request t request response_buffer flow sink)
       done)
 
-let create ?(socket_backlog = 10_000) ?(domains = domain_count) ~port
+let create ?(socket_backlog = 128) ?(domains = domain_count) ~port
     request_handler =
   {
     socket_backlog;
@@ -82,12 +82,12 @@ let run (t : t) (env : Eio.Stdenv.t) =
   Switch.run @@ fun sw ->
   let domain_mgr = Eio.Stdenv.domain_mgr env in
   let ssock =
-    Eio.Net.listen (Eio.Stdenv.net env) ~sw ~reuse_addr:true
+    Eio.Net.listen (Eio.Stdenv.net env) ~sw ~reuse_addr:true ~reuse_port:true
       ~backlog:t.socket_backlog
-    @@ `Tcp (Eio.Net.Ipaddr.V4.loopback, t.port)
+      (`Tcp (Eio.Net.Ipaddr.V4.loopback, t.port))
   in
   for _ = 2 to t.domains do
-    Eio.Std.Fibre.fork ~sw (fun () ->
+    Eio.Std.Fiber.fork ~sw (fun () ->
         Eio.Domain_manager.run domain_mgr (fun () -> run_domain t ssock))
   done;
   run_domain t ssock
