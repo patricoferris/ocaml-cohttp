@@ -186,11 +186,6 @@ let to_string t =
   Buffer.add_string b "\r\n";
   Buffer.contents b
 
-let is_keep_alive t =
-  match find t "connection" with
-  | v -> caseless_equal v "keep-alive"
-  | exception Not_found -> false
-
 let is_empty t = t.len = 0
 let length t = t.len
 let compare (t1 : t) (t2 : t) = Stdlib.compare t1 t2

@@ -98,10 +98,6 @@ module Header : sig
   val length : t -> int
   (** [length t] returns the count of headers in [t]. *)
 
-  val is_keep_alive : t -> bool
-  (** [is_keep_alive t] returns [true] if [t] holds header
-      ["Connection","keep-alive"], [false] otherwise. *)
-
   (** {1 Compare} *)
 
   val compare : t -> t -> int

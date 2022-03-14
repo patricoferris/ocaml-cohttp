@@ -11,7 +11,12 @@ let headers t = t.headers
 let meth t = t.meth
 let resource t = t.resource
 let version t = t.version
-let is_keep_alive t = Header.is_keep_alive t.headers
+
+let is_keep_alive t =
+  match Header.find_opt t.headers "connection" with
+  | Some "close" -> false
+  | Some "keep-alive" -> true
+  | _ -> Version.(compare t.version HTTP_1_1) >= 0
 
 let create ?(initial_header_len = 15) reader =
   {
