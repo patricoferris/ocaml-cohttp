@@ -109,27 +109,27 @@
   logs
   (ounit :with-test)))
 
-; (package
-;  (name cohttp-lwt-jsoo)
-;  (synopsis "CoHTTP implementation for the Js_of_ocaml JavaScript compiler")
-;  (description "\
-; An implementation of an HTTP client for JavaScript, but using the
-; CoHTTP types.  This lets you build HTTP clients that can compile
-; natively (using one of the other Cohttp backends such as `cohttp-lwt-unix`)
-; and also to native JavaScript via js_of_ocaml.
-; ")
-;  (depends
-;   (ocaml (>= 4.08))
-;   (http (= :version))
-;   (cohttp (= :version))
-;   (cohttp-lwt (= :version))
-;   logs
-;   (lwt (>= 3.0.0))
-;   (lwt_ppx :with-test)
-;   (conf-npm :with-test)
-;   (js_of_ocaml (>= 3.3.0))
-;   (js_of_ocaml-ppx (>= 3.3.0))
-;   (js_of_ocaml-lwt (>= 3.5.0))))
+(package
+ (name cohttp-lwt-jsoo)
+ (synopsis "CoHTTP implementation for the Js_of_ocaml JavaScript compiler")
+ (description "\
+An implementation of an HTTP client for JavaScript, but using the
+CoHTTP types.  This lets you build HTTP clients that can compile
+natively (using one of the other Cohttp backends such as `cohttp-lwt-unix`)
+and also to native JavaScript via js_of_ocaml.
+")
+ (depends
+  (ocaml (>= 4.08))
+  (http (= :version))
+  (cohttp (= :version))
+  (cohttp-lwt (= :version))
+  logs
+  (lwt (>= 3.0.0))
+  (lwt_ppx :with-test)
+  (conf-npm :with-test)
+  (js_of_ocaml (>= 3.3.0))
+  (js_of_ocaml-ppx (>= 3.3.0))
+  (js_of_ocaml-lwt (>= 3.5.0))))
 
 (package
  (name cohttp-async)
@@ -245,8 +245,10 @@
  (description
   "A CoHTTP server and client implementation based on `eio` library. `cohttp-eio`features a multicore capable HTTP 1.1 server. The library promotes and is built with direct style of coding as opposed to a monadic.")
  (depends
+  base-domains
   eio
   cstruct
+  bigstringaf
   (http
    (= :version))
   angstrom))

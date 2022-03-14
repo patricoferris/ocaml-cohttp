@@ -1,7 +1,7 @@
 type t = {
   flow : < Eio.Flow.two_way ; Eio.Flow.close >;
   switch : Eio.Std.Switch.t;
-  addr : Eio.Net.Sockaddr.t;
+  addr : Eio.Net.Sockaddr.stream;
   reader : Reader.t;
   response_buffer : Buffer.t;
 }

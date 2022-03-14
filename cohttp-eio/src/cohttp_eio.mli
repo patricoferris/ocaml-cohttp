@@ -118,15 +118,4 @@ module Server : sig
   (** {1 Basic Handlers} *)
 
   val not_found : handler
-
-  (** {1 Handler Combinators} *)
-
-  (* val join : handler -> handler -> handler *)
-  (** [join h1 h2] executes handler [h1]. If response is [None] then it executes
-      handler [h2]. *)
-
-  (*module Infix : sig *)
-  (*  val ( >>? ) : handler -> handler -> handler *)
-  (*  (1** [h1 >>? h2] is [join h1 h2] *1) *)
-  (*end *)
 end

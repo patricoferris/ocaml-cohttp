@@ -94,7 +94,7 @@ let run (t : t) env =
   Switch.run @@ fun sw ->
   let domain_mgr = Eio.Stdenv.domain_mgr env in
   for _ = 2 to t.domains do
-    Eio.Std.Fibre.fork ~sw (fun () ->
+    Eio.Std.Fiber.fork ~sw (fun () ->
         Eio.Domain_manager.run domain_mgr (fun () -> run_domain t env))
   done;
   run_domain t env
