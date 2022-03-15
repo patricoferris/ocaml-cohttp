@@ -38,7 +38,7 @@ let app req =
   | _ -> Response.not_found
 
 let () =
-  let port = ref 8081 in
+  let port = ref 8080 in
   Arg.parse
     [ ("-p", Arg.Set_int port, " Listening port number(8080 by default)") ]
     ignore "An HTTP/1.1 server";

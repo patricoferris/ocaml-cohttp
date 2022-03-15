@@ -49,31 +49,26 @@ let write_chunked flow chunk_writer =
   in
   chunk_writer write
 
-let write t buffer sink =
-  Buffer.clear buffer;
+let write t writer =
   let version = Version.to_string t.version in
   let status = Http.Status.to_string t.status in
-  Buffer.add_string buffer version;
-  Buffer.add_string buffer " ";
-  Buffer.add_string buffer status;
-  Buffer.add_string buffer "\r\n";
+  Writer.write_string writer version;
+  Writer.write_string writer " ";
+  Writer.write_string writer status;
+  Writer.write_string writer "\r\n";
   Header.iter
     (fun k v ->
-      Buffer.add_string buffer k;
-      Buffer.add_string buffer ": ";
-      Buffer.add_string buffer v;
-      Buffer.add_string buffer "\r\n")
+      Writer.write_string writer k;
+      Writer.write_string writer ": ";
+      Writer.write_string writer v;
+      Writer.write_string writer "\r\n")
     t.headers;
-  Buffer.add_string buffer "\r\n";
+  Writer.write_string writer "\r\n";
   match t.body with
-  | String s ->
-      Buffer.add_string buffer s;
-      Eio.Flow.copy_string (Buffer.contents buffer) sink
-  | Custom writer -> writer sink
-  | Chunked chunk_writer ->
-      Eio.Flow.copy_string (Buffer.contents buffer) sink;
-      write_chunked sink chunk_writer
-  | Empty -> Eio.Flow.copy_string (Buffer.contents buffer) sink
+  | String s -> Writer.write_string writer s
+  | Custom f -> f (Writer.sink writer)
+  | Chunked chunk_writer -> write_chunked (Writer.sink writer) chunk_writer
+  | Empty -> ()
 
 (* Basic Response *)
 

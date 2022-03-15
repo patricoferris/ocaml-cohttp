@@ -24,25 +24,28 @@ let read_fn flow buf ~off ~len =
     Eio.Flow.read flow cs
   with End_of_file -> 0
 
-let rec handle_request t request response_buffer flow sink =
+let rec handle_request t sw request writer flow =
   match Request.parse_into request with
   | () ->
       let response = t.request_handler request in
-      Response.write response response_buffer sink;
+      Response.write response writer;
+      Writer.wakeup writer;
       if Request.is_keep_alive request && not (Atomic.get t.stopped) then (
         Request.clear request;
-        handle_request t request response_buffer flow sink)
+        handle_request t sw request writer flow)
       else Eio.Flow.close flow
   | exception End_of_file ->
       Eio.traceln "Connection closed by client";
       Eio.Flow.close flow
   | exception Parser.Parse_failure msg ->
       Printf.eprintf "\nRequest parsing error: %s%!" msg;
-      Response.(write bad_request response_buffer sink);
+      Response.(write bad_request writer);
+      Writer.wakeup writer;
       Eio.Flow.close flow
   | exception exn ->
       Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
-      Response.(write internal_server_error response_buffer sink);
+      Response.(write internal_server_error writer);
+      Writer.wakeup writer;
       Eio.Flow.close flow
 
 let run_domain (t : t) ssock =
@@ -54,12 +57,12 @@ let run_domain (t : t) ssock =
   Switch.run (fun sw ->
       while not (Atomic.get t.stopped) do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
-          (fun ~sw:_ flow _addr ->
+          (fun ~sw flow _addr ->
             let reader = Reader.create 1024 (read_fn flow) in
             let request = Request.create reader in
-            let response_buffer = Buffer.create 1024 in
-            let sink = (flow :> Eio.Flow.sink) in
-            handle_request t request response_buffer flow sink)
+            let writer = Writer.create flow in
+            Eio.Fiber.fork ~sw (fun () -> Writer.run writer);
+            handle_request t sw request writer flow)
       done)
 
 let create ?(socket_backlog = 128) ?(domains = domain_count) ~port
