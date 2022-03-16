@@ -132,7 +132,6 @@ module Reader : sig
 
       @raise End_of_file if end of file is reached. *)
 
-  val clear : t -> unit
   val unsafe_get : t -> int -> char
   val substring : t -> off:int -> len:int -> string
   val copy : t -> off:int -> len:int -> Bigstringaf.t

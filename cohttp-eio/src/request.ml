@@ -27,9 +27,7 @@ let create ?(initial_header_len = 15) reader =
     resource = "";
   }
 
-let clear t =
-  Header.clear t.headers;
-  Reader.clear t.reader
+let clear t = Header.clear t.headers
 
 module P = Parser
 

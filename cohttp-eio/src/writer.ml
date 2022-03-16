@@ -26,7 +26,8 @@ type t = {
 }
 
 let create flow =
-  { flow; buf = Buffer.create 1024; wakeup = Optional_thunk.none }
+  let buf = Buffer.create 0x1000 in
+  { flow; buf; wakeup = Optional_thunk.none }
 
 let write_string t s = Buffer.add_string t.buf s
 let sink t = (t.flow :> Eio.Flow.sink)

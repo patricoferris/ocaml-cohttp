@@ -31,7 +31,8 @@ let rec handle_request t sw request writer flow =
         Request.clear request;
         handle_request t sw request writer flow)
       else Eio.Flow.close flow
-  | exception End_of_file -> Eio.Flow.close flow
+  | (exception End_of_file) | (exception Eio.Net.Connection_reset _) ->
+      Eio.Flow.close flow
   | exception Parser.Parse_failure _ ->
       Response.(write bad_request writer);
       Writer.wakeup writer;
@@ -51,7 +52,7 @@ let run_domain (t : t) ssock =
       while true do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
           (fun ~sw flow _addr ->
-            let reader = Reader.create 1024 (flow :> Eio.Flow.source) in
+            let reader = Reader.create 0x1000 (flow :> Eio.Flow.source) in
             let request = Request.create reader in
             let writer = Writer.create flow in
             Eio.Fiber.fork ~sw (fun () -> Writer.run writer);

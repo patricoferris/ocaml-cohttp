@@ -6,21 +6,12 @@ type t = {
   mutable len : int;
   mutable pos : int; (* Parser position *)
   mutable committed_bytes : int; (* Total bytes read so far *)
-  mutable eof_seen : bool;
 }
 
 let create len source =
   assert (len > 0);
   let buf = Bigstringaf.create len in
-  {
-    source;
-    buf;
-    off = 0;
-    len = 0;
-    pos = 0;
-    committed_bytes = 0;
-    eof_seen = false;
-  }
+  { source; buf; off = 0; len = 0; pos = 0; committed_bytes = 0 }
 
 let length t = t.len
 let committed_bytes t = t.committed_bytes
@@ -58,11 +49,6 @@ let consume t n =
   t.committed_bytes <- t.committed_bytes + n
 
 let commit t = consume t t.pos
-
-let clear t =
-  commit t;
-  t.committed_bytes <- 0;
-  t.eof_seen <- false
 
 let fill t to_read =
   adjust_buffer t to_read;
