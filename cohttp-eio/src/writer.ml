@@ -21,12 +21,14 @@ end
 
 type t = {
   flow : < Eio.Flow.two_way ; Eio.Flow.close >;
-  data : string Queue.t;
+  buf : Buffer.t;
   mutable wakeup : Optional_thunk.t;
 }
 
-let create flow = { flow; data = Queue.create (); wakeup = Optional_thunk.none }
-let write_string t s = Queue.push s t.data
+let create flow =
+  { flow; buf = Buffer.create 1024; wakeup = Optional_thunk.none }
+
+let write_string t s = Buffer.add_string t.buf s
 let sink t = (t.flow :> Eio.Flow.sink)
 let close t = Eio.Flow.close t.flow
 
@@ -37,10 +39,10 @@ let wakeup t =
 
 let run t =
   let rec loop () =
-    match Queue.take_opt t.data with
-    | None -> t.wakeup <- Optional_thunk.some loop
-    | Some s ->
-        Eio.Flow.copy_string s t.flow;
-        loop ()
+    if Buffer.length t.buf > 0 then (
+      Eio.Flow.copy_string (Buffer.contents t.buf) t.flow;
+      Buffer.clear t.buf;
+      loop ())
+    else t.wakeup <- Optional_thunk.some loop
   in
   loop ()
