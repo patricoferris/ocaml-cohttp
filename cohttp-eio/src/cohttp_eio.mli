@@ -120,12 +120,6 @@ end
 module Reader : sig
   type t
 
-  val create : int -> (Bigstringaf.t -> off:int -> len:int -> int) -> t
-  (** [create len read_fn] returns [t] with an initial buffer of size [len].
-
-      [read_fn] is the read function used to fill [t]. It returns the count of
-      bytes read and returns [0] if end of file is reached. *)
-
   val length : t -> int
   (** [length t] is the count of unconsumed bytes in [t]. *)
 
@@ -133,8 +127,10 @@ module Reader : sig
   (** [consume t n] marks [n] bytes of data as consumed in [t]. *)
 
   val fill : t -> int -> int
-  (** [fill t n] attempts to fill [t] with [n] bytes. It returns [0] if end of
-      file is reached. Otherwise it return the number of bytes stored in [t]. *)
+  (** [fill t n] attempts to fill [t] with [n] bytes and returns the actual
+      number of bytes filled.
+
+      @raise End_of_file if end of file is reached. *)
 
   val clear : t -> unit
   val unsafe_get : t -> int -> char

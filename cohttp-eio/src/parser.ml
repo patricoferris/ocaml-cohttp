@@ -46,9 +46,9 @@ let lift2 f p q inp =
   f a b
 
 let rec ensure inp len =
-  if Reader.(length inp < pos inp + len) then
-    let got = Reader.fill inp len in
-    if got = 0 then raise_notrace End_of_file else ensure inp len
+  if Reader.(length inp < pos inp + len) then (
+    ignore (Reader.fill inp len);
+    ensure inp len)
 
 let pos inp = Reader.pos inp
 

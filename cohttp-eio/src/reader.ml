@@ -1,6 +1,6 @@
+(* Based on https://github.com/inhabitedtype/angstrom/blob/master/lib/buffering.ml *)
 type t = {
-  read_fn : Bigstringaf.t -> off:int -> len:int -> int;
-  (* Return 0 to indicate End_of_file. *)
+  source : Eio.Flow.source;
   mutable buf : Bigstringaf.t;
   mutable off : int;
   mutable len : int;
@@ -9,11 +9,11 @@ type t = {
   mutable eof_seen : bool;
 }
 
-let create len read_fn =
+let create len source =
   assert (len > 0);
   let buf = Bigstringaf.create len in
   {
-    read_fn;
+    source;
     buf;
     off = 0;
     len = 0;
@@ -61,21 +61,17 @@ let commit t = consume t t.pos
 
 let clear t =
   commit t;
-  t.committed_bytes <- 0
+  t.committed_bytes <- 0;
+  t.eof_seen <- false
 
 let fill t to_read =
-  if t.eof_seen then 0
-  else (
-    adjust_buffer t to_read;
-    let off = t.off + t.len in
-    let len = trailing_space t in
-    let got = t.read_fn t.buf ~off ~len in
-    if got = 0 then (
-      t.eof_seen <- true;
-      0)
-    else (
-      t.len <- t.len + got;
-      got))
+  adjust_buffer t to_read;
+  let off = t.off + t.len in
+  let len = trailing_space t in
+  let cs = Cstruct.of_bigarray ~off ~len t.buf in
+  let got = Eio.Flow.read t.source cs in
+  t.len <- t.len + got;
+  got
 
 let unsafe_get t off = Bigstringaf.unsafe_get t.buf (t.off + off)
 

@@ -58,7 +58,7 @@ let run_domain (t : t) ssock =
       while not (Atomic.get t.stopped) do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
           (fun ~sw flow _addr ->
-            let reader = Reader.create 1024 (read_fn flow) in
+            let reader = Reader.create 1024 (flow :> Eio.Flow.source) in
             let request = Request.create reader in
             let writer = Writer.create flow in
             Eio.Fiber.fork ~sw (fun () -> Writer.run writer);
