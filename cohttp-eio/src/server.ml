@@ -8,10 +8,7 @@ type t = {
   domains : int;
   port : int;
   request_handler : handler;
-  stopped : bool Atomic.t;
 }
-
-let stop t = ignore @@ Atomic.compare_and_set t.stopped false true
 
 let domain_count =
   match Sys.getenv_opt "COHTTP_DOMAINS" with
@@ -30,20 +27,16 @@ let rec handle_request t sw request writer flow =
       let response = t.request_handler request in
       Response.write response writer;
       Writer.wakeup writer;
-      if Request.is_keep_alive request && not (Atomic.get t.stopped) then (
+      if Request.is_keep_alive request then (
         Request.clear request;
         handle_request t sw request writer flow)
       else Eio.Flow.close flow
-  | exception End_of_file ->
-      Eio.traceln "Connection closed by client";
-      Eio.Flow.close flow
-  | exception Parser.Parse_failure msg ->
-      Printf.eprintf "\nRequest parsing error: %s%!" msg;
+  | exception End_of_file -> Eio.Flow.close flow
+  | exception Parser.Parse_failure _ ->
       Response.(write bad_request writer);
       Writer.wakeup writer;
       Eio.Flow.close flow
-  | exception exn ->
-      Printf.eprintf "\nUnhandled exception: %s%!" (Printexc.to_string exn);
+  | exception _ ->
       Response.(write internal_server_error writer);
       Writer.wakeup writer;
       Eio.Flow.close flow
@@ -55,7 +48,7 @@ let run_domain (t : t) ssock =
       (Printexc.to_string exn)
   in
   Switch.run (fun sw ->
-      while not (Atomic.get t.stopped) do
+      while true do
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
           (fun ~sw flow _addr ->
             let reader = Reader.create 1024 (flow :> Eio.Flow.source) in
@@ -67,13 +60,7 @@ let run_domain (t : t) ssock =
 
 let create ?(socket_backlog = 128) ?(domains = domain_count) ~port
     request_handler =
-  {
-    socket_backlog;
-    domains;
-    port;
-    request_handler;
-    stopped = Atomic.make false;
-  }
+  { socket_backlog; domains; port; request_handler }
 
 (* wrk2 -t 24 -c 1000 -d 60s -R400000 http://localhost:8080 *)
 let run (t : t) (env : Eio.Stdenv.t) =
