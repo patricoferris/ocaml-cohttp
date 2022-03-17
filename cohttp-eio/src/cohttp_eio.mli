@@ -161,7 +161,7 @@ module Request : sig
 
   (** {1 Builtin Request Body Readers} *)
 
-  (* val read_fixed : t -> (Cstruct.t, string) result *)
+  val read_fixed : t -> (string, string) result
   (** [read_fixed t] is [Ok buf] if "Content-Length" header is a valid integer
       value in [t]. Otherwise it is [Error err] where [err] is the error text. *)
 

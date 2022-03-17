@@ -1,9 +1,10 @@
 type t = {
-  mutable version : Version.t;
+  reader : Reader.t;
   headers : Header.t;
+  mutable version : Version.t;
   mutable meth : Method.t;
   mutable resource : string;
-  reader : Reader.t;
+  mutable read_complete : bool;
 }
 
 let reader t = t.reader
@@ -25,6 +26,7 @@ let create ?(initial_header_len = 15) reader =
     meth = Method.Other "";
     reader;
     resource = "";
+    read_complete = false;
   }
 
 let clear t = Header.clear t.headers
@@ -77,15 +79,17 @@ let parse_into (t : t) =
       p_headers t.headers t.reader;
       P.commit t.reader
 
-(* let read_fixed t = *)
-(*   match Http.Header.get_transfer_encoding t.headers with *)
-(*   | Http.Transfer.Fixed content_length -> ( *)
-(*       if t.read_complete then Error "End of file" *)
-(*       else *)
-(*         let content_length = Int64.to_int content_length in *)
-(*         try Result.ok @@ Parser.(parse t.reader (fixed_body content_length)) *)
-(*         with e -> Error (Printexc.to_string e)) *)
-(*   | _ -> Error "Request is not a fixed content body" *)
+let read_fixed t =
+  if t.read_complete then Error "End of file"
+  else
+    match Header.find_opt t.headers "content-length" with
+    | Some v -> (
+        try
+          let content_length = int_of_string v in
+          let content = Parser.take content_length t.reader in
+          Ok content
+        with e -> Error (Printexc.to_string e))
+    | None -> Error "Request is not a fixed content body"
 
 (* let read_chunk _t = failwith "no implemented" *)
 (* match Http.Header.get_transfer_encoding t.headers with *)
