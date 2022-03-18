@@ -7,19 +7,13 @@ module R = Reader
 
 let create_reader s = 
   let flow = Eio.Flow.string_source s in
-  let read_fn buf ~off ~len = 
-    try 
-      let cs = Cstruct.of_bigarray ~off ~len buf in 
-      Eio.Flow.read flow cs
-    with End_of_file -> 0 
-  in
-  R.create 1 read_fn 
+  Private.create_reader 1 flow
 
 let parse ?rdr p s = 
   let p = P.(lift2 (fun a pos -> (a, pos)) p pos) in
   let rdr = 
     match rdr with
-    | Some r -> (Reader.clear r; r)
+    | Some r -> (Private.commit_reader r; r)
     | None -> create_reader s 
   in
   p rdr

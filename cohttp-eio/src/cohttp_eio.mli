@@ -236,6 +236,9 @@ end
 (**/**)
 
 module Private : sig
+  val create_reader : int -> Eio.Flow.source -> Reader.t
+  val commit_reader : Reader.t -> unit
+
   module Parser : sig
     type 'a t = Reader.t -> 'a
 

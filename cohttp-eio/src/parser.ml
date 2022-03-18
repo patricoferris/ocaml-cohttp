@@ -71,7 +71,7 @@ let peek_string n rdr =
   try
     ensure rdr n;
     Reader.substring rdr ~off:rdr.pos ~len:n
-  with End_of_file -> fail "[peek_string] not enough rdrut" rdr
+  with End_of_file -> fail "[peek_string] not enough input" rdr
 
 let sprintf = Printf.sprintf
 
@@ -105,6 +105,10 @@ let string s rdr =
     incr i
   done;
   if len = !i then Reader.incr_pos ~n:len rdr else fail "[string]" rdr
+
+let fix f =
+  let rec p = lazy (f r) and r inp = (Lazy.force p) inp in
+  r
 
 let count_while rdr f =
   let i = ref 0 in
@@ -141,7 +145,7 @@ let take_bigstring : int -> Bigstringaf.t t =
     let s = Reader.(copy rdr ~off:(pos rdr) ~len:n) in
     Reader.incr_pos ~n rdr;
     s
-  with End_of_file -> fail "[take_bigstring] not enough rdrut" rdr
+  with End_of_file -> fail "[take_bigstring] not enough input" rdr
 
 let take : int -> string t =
  fun n rdr ->
@@ -150,7 +154,7 @@ let take : int -> string t =
     let s = Reader.(substring rdr ~off:(pos rdr) ~len:n) in
     Reader.incr_pos ~n rdr;
     s
-  with End_of_file -> fail "[take] not enough rdrut" rdr
+  with End_of_file -> fail "[take] not enough input" rdr
 
 let take_till f = take_while (fun c -> not (f c))
 
