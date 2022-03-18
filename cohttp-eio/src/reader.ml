@@ -1,17 +1,22 @@
+(* Based on https://github.com/inhabitedtype/angstrom/blob/master/lib/buffering.ml *)
 type t = {
   source : Eio.Flow.source;
   mutable buf : Bigstringaf.t;
   mutable off : int;
   mutable len : int;
-  mutable eof_seen : bool;
+  mutable pos : int; (* Parser position *)
+  mutable committed_bytes : int; (* Total bytes read so far *)
 }
 
 let create len source =
   assert (len > 0);
   let buf = Bigstringaf.create len in
-  { source; buf; off = 0; len = 0; eof_seen = false }
+  { source; buf; off = 0; len = 0; pos = 0; committed_bytes = 0 }
 
 let length t = t.len
+let committed_bytes t = t.committed_bytes
+let pos t = t.pos
+let incr_pos ?(n = 1) t = t.pos <- t.pos + n
 let writable_space t = Bigstringaf.length t.buf - t.len
 let trailing_space t = Bigstringaf.length t.buf - (t.off + t.len)
 
@@ -36,26 +41,33 @@ let adjust_buffer t to_read =
     if writable_space t < to_read then grow t to_read else compress t
 
 let consume t n =
-  assert (n >= 0);
+  assert (t.len >= n);
+  assert (t.pos >= n);
   t.off <- t.off + n;
-  t.len <- t.len - n
+  t.len <- t.len - n;
+  t.pos <- t.pos - n;
+  t.committed_bytes <- t.committed_bytes + n
+
+let commit t = consume t t.pos
 
 let fill t to_read =
-  if t.eof_seen then 0
-  else (
-    adjust_buffer t to_read;
-    let off = t.off + t.len in
-    let len = trailing_space t in
-    match Eio.Flow.read t.source (Cstruct.of_bigarray t.buf ~off ~len) with
-    | got ->
-        t.len <- t.len + got;
-        got
-    | exception End_of_file ->
-        t.eof_seen <- true;
-        0)
+  adjust_buffer t to_read;
+  let off = t.off + t.len in
+  let len = trailing_space t in
+  let cs = Cstruct.of_bigarray ~off ~len t.buf in
+  let got = Eio.Flow.read t.source cs in
+  t.len <- t.len + got;
+  got
 
 let unsafe_get t off = Bigstringaf.unsafe_get t.buf (t.off + off)
-let buffer t = Cstruct.of_bigarray t.buf ~off:t.off ~len:t.len
+
+let substring t ~off ~len =
+  let b = Bytes.create len in
+  Bigstringaf.unsafe_blit_to_bytes t.buf ~src_off:(t.off + off) b ~dst_off:0
+    ~len;
+  Bytes.unsafe_to_string b
+
+let copy t ~off ~len = Bigstringaf.copy t.buf ~off:(t.off + off) ~len
 
 exception Parse_error of string
 

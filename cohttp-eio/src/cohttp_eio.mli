@@ -9,11 +9,14 @@ module Reader : sig
   (** [consume t n] marks [n] bytes of data as consumed in [t]. *)
 
   val fill : t -> int -> int
-  (** [fill t n] attempts to fill [t] with [n] bytes. It returns [0] if end of
-      file is reached. Otherwise it return the number of bytes stored in [t]. *)
+  (** [fill t n] attempts to fill [t] with [n] bytes and returns the actual
+      number of bytes filled.
+
+      @raise End_of_file if end of file is reached. *)
 
   val unsafe_get : t -> int -> char
-  val buffer : t -> Cstruct.t
+  val substring : t -> off:int -> len:int -> string
+  val copy : t -> off:int -> len:int -> Bigstringaf.t
 end
 
 (** [Chunk] encapsulates HTTP/1.1 chunk transfer encoding data structures.
@@ -118,4 +121,51 @@ module Server : sig
   (** {1 Basic Handlers} *)
 
   val not_found : handler
+end
+
+(**/*)
+
+module Private : sig
+  val create_reader : int -> Eio.Flow.source -> Reader.t
+  val commit_reader : Reader.t -> unit
+
+  
+  module Parser : sig
+    type 'a t = Reader.t -> 'a
+
+    exception Parse_failure of string
+
+    val return : 'a -> 'a t
+    val fail : string -> 'a t
+    val commit : unit t
+    val pos : int t
+    val ( <?> ) : 'a t -> string -> 'a t
+    val ( >>= ) : 'a t -> ('a -> 'b t) -> 'b t
+    val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
+    val ( >>| ) : 'a t -> ('a -> 'b) -> 'b t
+    val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+    val ( <* ) : 'a t -> _ t -> 'a t
+    val ( *> ) : _ t -> 'b t -> 'b t
+    val ( <|> ) : 'a t -> 'a t -> 'a t
+    val lift : ('a -> 'b) -> 'a t -> 'b t
+    val lift2 : ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
+    val end_of_input : bool t
+    val option : 'a -> 'a t -> 'a t
+    val peek_char : char t
+    val peek_string : int -> string t
+    val char : char -> unit t
+    val any_char : char t
+    val satisfy : (char -> bool) -> char t
+    val string : string -> unit t
+    val take_while1 : (char -> bool) -> string t
+    val take_while : (char -> bool) -> string t
+    val take_bigstring : int -> Bigstringaf.t t
+    val take : int -> string t
+    val take_till : (char -> bool) -> string t
+    val many : 'a t -> 'a list t
+    val many_till : 'a t -> _ t -> 'a list t
+    val skip : (char -> bool) -> unit t
+    val skip_while : (char -> bool) -> unit t
+    val skip_many : 'a t -> unit t
+  end
 end
