@@ -1,6 +1,3 @@
-module Version = Version
-module Method = Method
-module Header = Header
 module Reader = Reader
 module Chunk = Chunk
 module Request = Request

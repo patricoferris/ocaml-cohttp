@@ -1,8 +1,8 @@
 type t = {
-  headers : Header.t;
+  headers : Http.Header.t;
   body : body;
   status : Http.Status.t;
-  version : Version.t;
+  version : Http.Version.t;
 }
 
 and body =
@@ -13,8 +13,8 @@ and body =
 
 and write_chunk = (Chunk.t -> unit) -> unit
 
-let create ?(version = Version.HTTP_1_1) ?(status = `OK)
-    ?(headers = Header.init ()) body =
+let create ?(version = `HTTP_1_1) ?(status = `OK)
+    ?(headers = Http.Header.init ()) body =
   { headers; body; status; version }
 
 (* Response Details *)
@@ -50,13 +50,13 @@ let write_chunked flow chunk_writer =
   chunk_writer write
 
 let write t writer =
-  let version = Version.to_string t.version in
+  let version = Http.Version.to_string t.version in
   let status = Http.Status.to_string t.status in
   Writer.write_string writer version;
   Writer.write_string writer " ";
   Writer.write_string writer status;
   Writer.write_string writer "\r\n";
-  Header.iter
+  Http.Header.iter
     (fun k v ->
       Writer.write_string writer k;
       Writer.write_string writer ": ";
@@ -73,18 +73,24 @@ let write t writer =
 (* Basic Response *)
 
 let text body =
-  let headers = Header.create 2 in
-  Header.add_header headers ("content-type", "text/plain; charset=UTF-8");
-  Header.add_header headers
-    ("content-length", string_of_int @@ String.length body);
+  let headers =
+    Http.Header.of_list
+      [
+        ("content-type", "text/plain; charset=UTF-8");
+        ("content-length", string_of_int @@ String.length body);
+      ]
+  in
 
   create ~headers (String body)
 
 let html body =
-  let headers = Header.create 0 in
-  Header.add_header headers ("content-type", "text/html; charset=UTF-8");
-  Header.add_header headers
-    ("content-length", string_of_int @@ String.length body);
+  let headers =
+    Http.Header.of_list
+      [
+        ("content-type", "text/html; charset=UTF-8");
+        ("content-length", string_of_int @@ String.length body);
+      ]
+  in
   create ~headers (String body)
 
 let not_found = create ~status:`Not_found Empty
