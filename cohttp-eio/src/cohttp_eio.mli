@@ -269,6 +269,7 @@ module Private : sig
     val take : int -> string t
     val take_till : (char -> bool) -> string t
     val many : 'a t -> 'a list t
+    val many_till : 'a t -> _ t -> 'a list t
     val skip : (char -> bool) -> unit t
     val skip_while : (char -> bool) -> unit t
     val skip_many : 'a t -> unit t

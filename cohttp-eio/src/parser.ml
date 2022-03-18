@@ -4,171 +4,179 @@ exception Parse_failure of string
 
 let return v _ = v
 let fail err _ = Stdlib.raise_notrace (Parse_failure err)
-let commit inp = Reader.commit inp
-let ( <?> ) p err inp = try p inp with Parse_failure _e -> fail err inp
+let commit rdr = Reader.commit rdr
+let ( <?> ) p err rdr = try p rdr with Parse_failure _e -> fail err rdr
 
-let ( >>= ) p f inp =
-  let a = p inp in
-  f a inp
+let ( >>= ) p f rdr =
+  let a = p rdr in
+  f a rdr
 
 let ( let* ) = ( >>= )
 
-let ( >>| ) p f inp =
-  let v = p inp in
+let ( >>| ) p f rdr =
+  let v = p rdr in
   f v
 
 let ( let+ ) = ( >>| )
 
-let ( <* ) p q inp =
-  let a = p inp in
-  let _ = q inp in
+let ( <* ) p q rdr =
+  let a = p rdr in
+  let _ = q rdr in
   a
 
-let ( *> ) p q inp =
-  let _ = p inp in
-  q inp
+let ( *> ) p q rdr =
+  let _ = p rdr in
+  q rdr
 
-let ( <|> ) p q inp =
-  let old_pos = Reader.pos inp in
-  let old_committed = Reader.committed_bytes inp in
-  try p inp
+let ( <|> ) p q rdr =
+  let old_pos = Reader.pos rdr in
+  let old_committed = Reader.committed_bytes rdr in
+  try p rdr
   with Parse_failure _ as ex ->
-    if old_committed < Reader.committed_bytes inp then raise_notrace ex
+    if old_committed < Reader.committed_bytes rdr then raise_notrace ex
     else (
-      inp.pos <- old_pos;
-      q inp)
+      rdr.pos <- old_pos;
+      q rdr)
 
 let lift f p = p >>| f
 
-let lift2 f p q inp =
-  let a = p inp in
-  let b = q inp in
+let lift2 f p q rdr =
+  let a = p rdr in
+  let b = q rdr in
   f a b
 
-let rec ensure inp len =
-  if Reader.(length inp < pos inp + len) then (
-    ignore (Reader.fill inp len);
-    ensure inp len)
+let rec ensure rdr len =
+  if Reader.(length rdr < pos rdr + len) then (
+    ignore (Reader.fill rdr len);
+    ensure rdr len)
 
-let pos inp = Reader.pos inp
+let pos rdr = Reader.pos rdr
 
-let end_of_input inp =
+let end_of_input rdr =
   try
-    ensure inp 1;
+    ensure rdr 1;
     false
   with End_of_file -> true
 
 let option : 'a -> 'a t -> 'a t = fun x p -> p <|> return x
 
-let peek_char inp =
+let peek_char rdr =
   let open Reader in
-  if pos inp < length inp then unsafe_get inp (pos inp)
+  if pos rdr < length rdr then unsafe_get rdr (pos rdr)
   else (
-    ensure inp 1;
-    unsafe_get inp inp.pos)
+    ensure rdr 1;
+    unsafe_get rdr rdr.pos)
 
-let peek_string n inp =
+let peek_string n rdr =
   try
-    ensure inp n;
-    Reader.substring inp ~off:inp.pos ~len:n
-  with End_of_file -> fail "[peek_string] not enough input" inp
+    ensure rdr n;
+    Reader.substring rdr ~off:rdr.pos ~len:n
+  with End_of_file -> fail "[peek_string] not enough rdrut" rdr
 
 let sprintf = Printf.sprintf
 
-let char c inp =
-  let c' = peek_char inp in
-  if c = c' then Reader.incr_pos inp
-  else fail (sprintf "[char] expected %C, got %C" c c') inp
+let char c rdr =
+  let c' = peek_char rdr in
+  if c = c' then Reader.incr_pos rdr
+  else fail (sprintf "[char] expected %C, got %C" c c') rdr
 
-let any_char inp =
-  ensure inp 1;
-  let c = Reader.unsafe_get inp inp.pos in
-  Reader.incr_pos inp;
+let any_char rdr =
+  ensure rdr 1;
+  let c = Reader.unsafe_get rdr rdr.pos in
+  Reader.incr_pos rdr;
   c
 
-let satisfy f inp =
-  let c = peek_char inp in
+let satisfy f rdr =
+  let c = peek_char rdr in
   if f c then (
-    Reader.incr_pos inp;
+    Reader.incr_pos rdr;
     c)
-  else fail "[satisfy]" inp
+  else fail "[satisfy]" rdr
 
-let string s inp =
+let string s rdr =
   let len = String.length s in
-  ensure inp len;
-  let pos = pos inp in
+  ensure rdr len;
+  let pos = pos rdr in
   let i = ref 0 in
   while
     !i < len
-    && Char.equal (Reader.unsafe_get inp (pos + !i)) (String.unsafe_get s !i)
+    && Char.equal (Reader.unsafe_get rdr (pos + !i)) (String.unsafe_get s !i)
   do
     incr i
   done;
-  if len = !i then Reader.incr_pos ~n:len inp else fail "[string]" inp
+  if len = !i then Reader.incr_pos ~n:len rdr else fail "[string]" rdr
 
-let count_while inp f =
+let count_while rdr f =
   let i = ref 0 in
   let continue = ref true in
   while !continue do
     try
-      ensure inp (!i + 1);
-      let c = Reader.(unsafe_get inp (pos inp + !i)) in
+      ensure rdr (!i + 1);
+      let c = Reader.(unsafe_get rdr (pos rdr + !i)) in
       if f c then incr i else continue := false
     with End_of_file -> continue := false
   done;
   !i
 
-let take_while1 f inp =
-  let count = count_while inp f in
-  if count < 1 then fail "[take_while1] count is less than 1" inp
+let take_while1 f rdr =
+  let count = count_while rdr f in
+  if count < 1 then fail "[take_while1] count is less than 1" rdr
   else
-    let s = Reader.(substring inp ~off:(pos inp) ~len:count) in
-    Reader.incr_pos ~n:count inp;
+    let s = Reader.(substring rdr ~off:(pos rdr) ~len:count) in
+    Reader.incr_pos ~n:count rdr;
     s
 
-let take_while f inp =
-  let count = count_while inp f in
+let take_while f rdr =
+  let count = count_while rdr f in
   if count > 0 then (
-    let s = Reader.(substring inp ~off:(pos inp) ~len:count) in
-    Reader.incr_pos ~n:count inp;
+    let s = Reader.(substring rdr ~off:(pos rdr) ~len:count) in
+    Reader.incr_pos ~n:count rdr;
     s)
   else ""
 
 let take_bigstring : int -> Bigstringaf.t t =
- fun n inp ->
+ fun n rdr ->
   try
-    ensure inp n;
-    let s = Reader.(copy inp ~off:(pos inp) ~len:n) in
-    Reader.incr_pos ~n inp;
+    ensure rdr n;
+    let s = Reader.(copy rdr ~off:(pos rdr) ~len:n) in
+    Reader.incr_pos ~n rdr;
     s
-  with End_of_file -> fail "[take_bigstring] not enough input" inp
+  with End_of_file -> fail "[take_bigstring] not enough rdrut" rdr
 
 let take : int -> string t =
- fun n inp ->
+ fun n rdr ->
   try
-    ensure inp n;
-    let s = Reader.(substring inp ~off:(pos inp) ~len:n) in
-    Reader.incr_pos ~n inp;
+    ensure rdr n;
+    let s = Reader.(substring rdr ~off:(pos rdr) ~len:n) in
+    Reader.incr_pos ~n rdr;
     s
-  with End_of_file -> fail "[take] not enough input" inp
+  with End_of_file -> fail "[take] not enough rdrut" rdr
 
 let take_till f = take_while (fun c -> not (f c))
 
 let rec many : 'a t -> 'a list t =
- fun p inp ->
+ fun p rdr ->
   try
-    let a = p inp in
-    a :: many p inp
+    let a = p rdr in
+    a :: many p rdr
   with Parse_failure _ | End_of_file -> []
 
-let skip f inp =
-  ensure inp 1;
-  let c = Reader.(unsafe_get inp (pos inp)) in
-  if f c then Reader.incr_pos inp else fail "[skip]" inp
+let rec many_till : 'a t -> _ t -> 'a list t =
+ fun p t rdr ->
+  try
+    let _ = t rdr in
+    let a = p rdr in
+    a :: many_till p t rdr
+  with Parse_failure _ -> []
 
-let skip_while f inp =
-  let count = count_while inp f in
-  Reader.incr_pos ~n:count inp
+let skip f rdr =
+  ensure rdr 1;
+  let c = Reader.(unsafe_get rdr (pos rdr)) in
+  if f c then Reader.incr_pos rdr else fail "[skip]" rdr
 
-let rec skip_many p inp =
-  match p inp with _ -> skip_many p inp | exception Parse_failure _ -> ()
+let skip_while f rdr =
+  let count = count_while rdr f in
+  Reader.incr_pos ~n:count rdr
+
+let rec skip_many p rdr =
+  match p rdr with _ -> skip_many p rdr | exception Parse_failure _ -> ()
