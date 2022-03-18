@@ -5,7 +5,6 @@ type t = {
 }
 
 let reader t = t.reader
-let has_body t = Http.Request.has_body t.req
 let headers t = t.req.headers
 let meth t = t.req.meth
 let scheme t = t.req.scheme

@@ -35,7 +35,6 @@ module Request : sig
 
   (** {1 Request Details} *)
 
-  val has_body : t -> [ `No | `Unknown | `Yes ]
   val headers : t -> Http.Header.t
   val meth : t -> Http.Method.t
   val scheme : t -> string option
@@ -129,7 +128,6 @@ module Private : sig
   val create_reader : int -> Eio.Flow.source -> Reader.t
   val commit_reader : Reader.t -> unit
 
-  
   module Parser : sig
     type 'a t = Reader.t -> 'a
 
