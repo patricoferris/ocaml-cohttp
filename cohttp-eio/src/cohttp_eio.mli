@@ -153,10 +153,10 @@ module Request : sig
 
   (** {1 Request Details} *)
 
-  val headers : t -> Header.t
-  val meth : t -> Method.t
+  val headers : t -> Http.Header.t
+  val meth : t -> Http.Method.t
   val resource : t -> string
-  val version : t -> Version.t
+  val version : t -> Http.Version.t
   val is_keep_alive : t -> bool
 
   (** {1 Builtin Request Body Readers} *)

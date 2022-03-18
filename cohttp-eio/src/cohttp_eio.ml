@@ -8,7 +8,8 @@ module Response = Response
 module Server = Server
 
 module Private = struct
-   let create_reader = Reader.create
+  let create_reader = Reader.create
   let commit_reader = Reader.commit
+
   module Parser = Parser
 end

@@ -21,19 +21,18 @@ let read_fn flow buf ~off ~len =
     Eio.Flow.read flow cs
   with End_of_file -> 0
 
-let rec handle_request t sw request writer flow =
-  match Request.parse_into request with
-  | () ->
+let rec handle_request t reader writer flow =
+  match Request.parse reader with
+  | request ->
       let response = t.request_handler request in
       Response.write response writer;
       Writer.wakeup writer;
-      if Request.is_keep_alive request then (
-        Request.clear request;
-        handle_request t sw request writer flow)
+      if Request.is_keep_alive request then handle_request t reader writer flow
       else Eio.Flow.close flow
   | (exception End_of_file) | (exception Eio.Net.Connection_reset _) ->
       Eio.Flow.close flow
-  | exception Parser.Parse_failure _ ->
+  | exception Parser.Parse_failure e ->
+      Eio.traceln "Parser_failure: %S" e;
       Response.(write bad_request writer);
       Writer.wakeup writer;
       Eio.Flow.close flow
@@ -53,10 +52,9 @@ let run_domain (t : t) ssock =
         Eio.Net.accept_sub ~sw ssock ~on_error:on_accept_error
           (fun ~sw flow _addr ->
             let reader = Reader.create 0x1000 (flow :> Eio.Flow.source) in
-            let request = Request.create reader in
             let writer = Writer.create flow in
             Eio.Fiber.fork ~sw (fun () -> Writer.run writer);
-            handle_request t sw request writer flow)
+            handle_request t reader writer flow)
       done)
 
 let create ?(socket_backlog = 128) ?(domains = domain_count) ~port
