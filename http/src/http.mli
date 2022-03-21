@@ -305,7 +305,7 @@ module Header : sig
   val fold : (string -> string -> 'a -> 'a) -> t -> 'a -> 'a
 
   val to_lines : t -> string list
-  (** [to_lines h] returns header fieds as a list of lines. Beware that each
+  (** [to_lines h] returns header fields as a list of lines. Beware that each
       line ends with "\r\n" characters. *)
 
   val to_frames : t -> string list
@@ -353,6 +353,12 @@ module Header : sig
 
   val pp_hum : Format.formatter -> t -> unit
   (** Human-readable output, used by the toplevel printer *)
+
+  module Private : sig
+    val caseless_equal : string -> string -> bool
+    (** [caseless_equal a b] must be equivalent to
+        [String.equal (String.lowercase_ascii a) (String.lowercase_ascii b)]. *)
+  end
 end
 
 module Request : sig

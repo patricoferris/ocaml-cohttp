@@ -15,24 +15,23 @@ let domain_count =
   | Some d -> int_of_string d
   | None -> 1
 
-let read_fn flow buf ~off ~len =
-  try
-    let cs = Cstruct.of_bigarray ~off ~len buf in
-    Eio.Flow.read flow cs
-  with End_of_file -> 0
-
 let rec handle_request t reader writer flow =
   match Request.parse reader with
   | request ->
       let response = t.request_handler request in
       Response.write response writer;
       Writer.wakeup writer;
-      if Request.is_keep_alive request then handle_request t reader writer flow
+      if Request.is_keep_alive request then (
+        (if not request.read_complete then
+         match Http.Header.get_transfer_encoding (Request.headers request) with
+         | Http.Transfer.Fixed _ -> ignore @@ Request.read_fixed request
+         | Http.Transfer.Chunked -> ignore @@ Request.read_chunk request ignore
+         | _ -> ());
+        handle_request t reader writer flow)
       else Eio.Flow.close flow
   | (exception End_of_file) | (exception Eio.Net.Connection_reset _) ->
       Eio.Flow.close flow
-  | exception Parser.Parse_failure e ->
-      Eio.traceln "Parser_failure: %S" e;
+  | exception Parser.Parse_failure _e ->
       Response.(write bad_request writer);
       Writer.wakeup writer;
       Eio.Flow.close flow
@@ -42,7 +41,6 @@ let rec handle_request t reader writer flow =
       Eio.Flow.close flow
 
 let run_domain (t : t) ssock =
-  traceln "Running server in domain %d" (Domain.self () :> int);
   let on_accept_error exn =
     Printf.fprintf stderr "Error while accepting connection: %s"
       (Printexc.to_string exn)
@@ -63,8 +61,6 @@ let create ?(socket_backlog = 128) ?(domains = domain_count) ~port
 
 (* wrk2 -t 24 -c 1000 -d 60s -R400000 http://localhost:8080 *)
 let run (t : t) (env : Eio.Stdenv.t) =
-  Eio.Std.traceln "\nServer listening on 127.0.0.1:%d" t.port;
-  Eio.Std.traceln "\nStarting %d domains ...%!" t.domains;
   Switch.run @@ fun sw ->
   let domain_mgr = Eio.Stdenv.domain_mgr env in
   let ssock =

@@ -111,27 +111,56 @@
   logs
   (ounit :with-test)))
 
-; (package
-;  (name cohttp-lwt-jsoo)
-;  (synopsis "CoHTTP implementation for the Js_of_ocaml JavaScript compiler")
-;  (description "\
-; An implementation of an HTTP client for JavaScript, but using the
-; CoHTTP types.  This lets you build HTTP clients that can compile
-; natively (using one of the other Cohttp backends such as `cohttp-lwt-unix`)
-; and also to native JavaScript via js_of_ocaml.
-; ")
-;  (depends
-;   (ocaml (>= 4.08))
-;   (http (= :version))
-;   (cohttp (= :version))
-;   (cohttp-lwt (= :version))
-;   logs
-;   (lwt (>= 3.0.0))
-;   (lwt_ppx :with-test)
-;   (conf-npm :with-test)
-;   (js_of_ocaml (>= 3.3.0))
-;   (js_of_ocaml-ppx (>= 3.3.0))
-;   (js_of_ocaml-lwt (>= 3.5.0))))
+(package
+ (name cohttp-server-lwt-unix)
+ (synopsis "Lightweight Cohttp + Lwt based HTTP server")
+ (description
+  "This server implementation is faster than cohttp-lwt-unix and is independent of\nconduit.\n")
+ (depends
+  (ocaml
+   (>= 4.08))
+  (http
+   (= :version))
+  (cohttp
+   (= :version))
+  (cohttp-lwt
+   (= :version))
+  (conduit-lwt-unix :with-test)
+  (cohttp-lwt-unix
+   (and
+    :with-test
+    (= :version)))
+  (cohttp-lwt
+   (and
+    :with-test
+    (= :version)))
+  lwt))
+
+(package
+ (name cohttp-lwt-jsoo)
+ (synopsis "CoHTTP implementation for the Js_of_ocaml JavaScript compiler")
+ (description
+  "An implementation of an HTTP client for JavaScript, but using the\nCoHTTP types.  This lets you build HTTP clients that can compile\nnatively (using one of the other Cohttp backends such as `cohttp-lwt-unix`)\nand also to native JavaScript via js_of_ocaml.\n")
+ (depends
+  (ocaml
+   (>= 4.08))
+  (http
+   (= :version))
+  (cohttp
+   (= :version))
+  (cohttp-lwt
+   (= :version))
+  logs
+  (lwt
+   (>= 3.0.0))
+  (lwt_ppx :with-test)
+  (conf-npm :with-test)
+  (js_of_ocaml
+   (>= 3.3.0))
+  (js_of_ocaml-ppx
+   (>= 3.3.0))
+  (js_of_ocaml-lwt
+   (>= 3.5.0))))
 
 (package
  (name cohttp-async)
@@ -226,6 +255,65 @@
   (sexplib0 :with-test)))
 
 (package
+ (name cohttp-curl)
+ (synopsis "Shared code between the individual cohttp-curl clients")
+ (description "Use cohttp-curl-lwt or cohttp-curl-async")
+ (depends
+  (ocaml
+   (>= 4.08))
+  ocurl
+  (http
+   (= :version))
+  stringext))
+
+(package
+ (name cohttp-curl-lwt)
+ (synopsis "Cohttp client using Curl & Lwt as the backend")
+ (description
+  "An HTTP client that relies on Curl + Lwt for the backend. Does not require\nconduit for SSL.")
+ (depends
+  (ocaml
+   (>= 4.08))
+  ocurl
+  (http
+   (= :version))
+  cohttp-curl
+  stringext
+  lwt
+  (uri
+   (and
+    :with-test
+    (>= 4.2.0)))
+  (alcotest :with-test)
+  (cohttp-lwt-unix :with-test)
+  (cohttp :with-test)
+  (cohttp-lwt :with-test)
+  (conduit-lwt :with-test)
+  (ounit :with-test)))
+
+(package
+ (name cohttp-curl-async)
+ (synopsis "Cohttp client using Curl & Async as the backend")
+ (description
+  "An HTTP client that relies on Curl + Async for the backend. Does not require\nconduit for SSL.")
+ (depends
+  ocurl
+  (http
+   (= :version))
+  stringext
+  core_kernel
+  async_kernel
+  async_unix
+  (cohttp-async :with-test)
+  (uri
+   (and
+    :with-test
+    (>= 4.2.0)))
+  (fmt :with-test)
+  (ounit :with-test)
+  (alcotest :with-test)))
+
+(package
  (name cohttp-bench)
  (synopsis "Benchmarks binaries for Cohttp")
  (description
@@ -236,7 +324,11 @@
   core_bench
   (http
    (= :version))
+  (cohttp
+   (= :version))
   (cohttp-lwt-unix
+   (= :version))
+  (cohttp-server-lwt-unix
    (= :version))
   (cohttp-async
    (= :version))))
@@ -247,8 +339,10 @@
  (description
   "A CoHTTP server and client implementation based on `eio` library. `cohttp-eio`features a multicore capable HTTP 1.1 server. The library promotes and is built with direct style of coding as opposed to a monadic.")
  (depends
+  base-domains
   eio
   cstruct
+  bigstringaf
   (http
    (= :version))
   angstrom))
