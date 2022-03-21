@@ -20,15 +20,11 @@ doc: "https://mirage.github.io/ocaml-cohttp/"
 bug-reports: "https://github.com/mirage/ocaml-cohttp/issues"
 depends: [
   "dune" {>= "3.0"}
-<<<<<<< HEAD
-=======
   "base-domains"
->>>>>>> eio-3
   "eio"
   "cstruct"
   "bigstringaf"
   "http" {= version}
-  "angstrom"
   "odoc" {with-doc}
 ]
 build: [
