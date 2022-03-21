@@ -35,17 +35,15 @@ module Request : sig
 
   (** {1 Request Details} *)
 
-  val has_body : t -> [ `No | `Unknown | `Yes ]
   val headers : t -> Http.Header.t
   val meth : t -> Http.Method.t
-  val scheme : t -> string option
   val resource : t -> string
   val version : t -> Http.Version.t
   val is_keep_alive : t -> bool
 
   (** {1 Builtin Request Body Readers} *)
 
-  val read_fixed : t -> (Cstruct.t, string) result
+  val read_fixed : t -> (string, string) result
   (** [read_fixed t] is [Ok buf] if "Content-Length" header is a valid integer
       value in [t]. Otherwise it is [Error err] where [err] is the error text. *)
 
@@ -56,14 +54,13 @@ module Request : sig
       https://datatracker.ietf.org/doc/html/rfc7230#section-4.1.3. Otherwise it
       is [Error err] where [err] is the error text. *)
 
+  val set_read_complete : t -> unit
+
   (** {1 Custom Request Body Readers} *)
 
   val reader : t -> Reader.t
   (** [reader t] returns a [Reader.t] instance. This can be used to create a
       custom request body reader. *)
-
-  val set_read_complete : t -> unit
-  (** [set_read_complet t] indicates that request [t] body has been read. *)
 end
 
 (** [Response] is a HTTP/1.1 response. *)
@@ -71,14 +68,12 @@ module Response : sig
   type t
 
   and body =
-    [ `String of string
-    | `Chunked of write_chunk
-    | `Custom of Eio.Flow.sink -> unit
-    | `None ]
+    | String of string
+    | Chunked of write_chunk
+    | Custom of (Eio.Flow.sink -> unit)
+    | Empty
 
   and write_chunk = (Chunk.t -> unit) -> unit
-
-  val create : ?headers:Http.Header.t -> ?status:Http.Status.t -> body -> t
 
   (** {1 Response Details} *)
 
@@ -86,24 +81,24 @@ module Response : sig
   val status : t -> Http.Status.t
   val body : t -> body
 
-  (** {1 Basic Response} *)
+  (** {1 Configuring Basic Response} *)
 
   val text : string -> t
-  (** [text s] is a HTTP/1.1, 200 status response with header "Content-Type:
-      text/plain". *)
+  (** [text t s] returns a HTTP/1.1, 200 status response with "Content-Type"
+      header set to "text/plain". *)
 
   val html : string -> t
-  (** [html s] is a HTTP/1.1, 200 status response with header "Content-Type:
-      text/html". *)
+  (** [html t s] returns a HTTP/1.1, 200 status response with header set to
+      "Content-Type: text/html". *)
 
   val not_found : t
-  (** [not_found] is a HTTP/1.1, 404 status response. *)
+  (** [not_found t] returns a HTTP/1.1, 404 status response. *)
 
   val internal_server_error : t
-  (** [internal_server_error] is a HTTP/1.1, 500 status response. *)
+  (** [internal_server_error] returns a HTTP/1.1, 500 status response. *)
 
   val bad_request : t
-  (** [bad_request] is a HTTP/1.1, 400 status response. *)
+  (** [bad_request t] returns a HTTP/1.1, 400 status response. *)
 end
 
 (** [Server] is a HTTP 1.1 server. *)
@@ -116,20 +111,18 @@ module Server : sig
 
   val create : ?socket_backlog:int -> ?domains:int -> port:int -> handler -> t
   val run : t -> Eio.Stdenv.t -> unit
-  val stop : t -> unit
 
   (** {1 Basic Handlers} *)
 
   val not_found : handler
 end
 
-(**/*)
+(**/**)
 
 module Private : sig
   val create_reader : int -> Eio.Flow.source -> Reader.t
   val commit_reader : Reader.t -> unit
 
-  
   module Parser : sig
     type 'a t = Reader.t -> 'a
 

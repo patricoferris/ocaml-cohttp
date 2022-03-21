@@ -2,9 +2,9 @@
 
 (name cohttp)
 
-(using mdx 0.2)
-
 (license ISC)
+
+(using mdx 0.2)
 
 (maintainers "Anil Madhavapeddy <anil@recoil.org>")
 

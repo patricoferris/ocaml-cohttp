@@ -68,24 +68,3 @@ let substring t ~off ~len =
   Bytes.unsafe_to_string b
 
 let copy t ~off ~len = Bigstringaf.copy t.buf ~off:(t.off + off) ~len
-
-exception Parse_error of string
-
-let parse t p =
-  let open Angstrom in
-  let rec loop = function
-    | Unbuffered.Partial k ->
-        consume t k.committed;
-        let got = fill t 128 in
-        let more =
-          if got = 0 then Unbuffered.Complete else Unbuffered.Incomplete
-        in
-        loop (k.continue t.buf ~off:t.off ~len:t.len more)
-    | Unbuffered.Done (len, a) ->
-        consume t len;
-        a
-    | Unbuffered.Fail (len, marks, err) ->
-        consume t len;
-        raise (Parse_error (String.concat " > " marks ^ ": " ^ err))
-  in
-  loop (Unbuffered.parse p)

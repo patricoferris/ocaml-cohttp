@@ -7,5 +7,6 @@ module Server = Server
 module Private = struct
   let create_reader = Reader.create
   let commit_reader = Reader.commit
-  module Parser = Parser.P
+
+  module Parser = Parser
 end

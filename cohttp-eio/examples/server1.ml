@@ -43,5 +43,5 @@ let () =
     [ ("-p", Arg.Set_int port, " Listening port number(8080 by default)") ]
     ignore "An HTTP/1.1 server";
 
-  let server = Server.create ~port:!port app in
-  Eio_main.run @@ fun env -> Server.run server env
+  let server = Server.create ~port:!port app ~socket_backlog:128 in
+  Eio_linux.run @@ fun env -> Server.run server (env :> Eio.Stdenv.t)
