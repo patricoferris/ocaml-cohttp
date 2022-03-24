@@ -4,26 +4,14 @@
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    autoconf
-    rsync
-    git
-    m4
-    patch
-    unzip
-    wget
+    curl
     pkg-config
-    gcc
     gmp
     libev
-    hidapi
-    libffi
-    jq
     zlib
     rustup
-    opam
-    bc
-    httpie
   ];
 
+  LD_LIBRARY_PATH = with pkgs; lib.makeLibraryPath [pkgs.curl];
   dontPatchShebangs = "1";
 }
