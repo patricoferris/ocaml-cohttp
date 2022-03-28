@@ -1,3 +1,10 @@
+(executable
+ (name test_parser_server)
+ (modules test_parser_server)
+ (public_name test-parser-server)
+ (package cohttp-eio)
+ (libraries cohttp_eio))
+
 (mdx
  (package cohttp-eio)
  (libraries cohttp_eio bigstringaf fmt eio cstruct))

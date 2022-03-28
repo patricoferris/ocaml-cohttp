@@ -343,6 +343,6 @@
   eio
   cstruct
   bigstringaf
+  fmt
   (http
-   (= :version))
-  ))
+   (= :version))))
