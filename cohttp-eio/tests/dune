@@ -1,10 +1,14 @@
 (executable
- (name test_parser_server)
- (modules test_parser_server)
- (public_name test-parser-server)
+ (name test_server)
+ (modules test_server)
+ (public_name test-server)
  (package cohttp-eio)
  (libraries cohttp_eio eio_main))
 
 (mdx
  (package cohttp-eio)
  (libraries cohttp_eio bigstringaf fmt eio cstruct))
+
+(cram
+ (applies_to test_get_post.t)
+ (deps %{bin:test_server}))
