@@ -3,7 +3,7 @@
  (modules test_parser_server)
  (public_name test-parser-server)
  (package cohttp-eio)
- (libraries cohttp_eio))
+ (libraries cohttp_eio eio_main))
 
 (mdx
  (package cohttp-eio)
