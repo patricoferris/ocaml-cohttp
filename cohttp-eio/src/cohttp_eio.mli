@@ -2,6 +2,8 @@
 module Reader : sig
   type t
 
+  val source : t -> Eio.Flow.source
+
   val length : t -> int
   (** [length t] is the count of unconsumed bytes in [t]. *)
 
@@ -18,6 +20,8 @@ module Reader : sig
   val substring : t -> off:int -> len:int -> string
   val copy : t -> off:int -> len:int -> Bigstringaf.t
 end
+
+module Writer = Writer
 
 (** [Chunk] encapsulates HTTP/1.1 chunk transfer encoding data structures.
     https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
@@ -40,6 +44,8 @@ module Request : sig
   val resource : t -> string
   val version : t -> Http.Version.t
   val is_keep_alive : t -> bool
+
+  val to_http : ?enc:Http.Transfer.encoding -> t -> Http.Request.t
 
   (** {1 Builtin Request Body Readers} *)
 
@@ -70,10 +76,19 @@ module Response : sig
   and body =
     | String of string
     | Chunked of write_chunk
-    | Custom of (Eio.Flow.sink -> unit)
+    | Custom of (Eio.Flow.source -> Eio.Flow.sink -> unit)
     | Empty
 
   and write_chunk = (Chunk.t -> unit) -> unit
+
+  val create :
+    ?version:Http.Version.t ->
+    ?status:Http.Status.t ->
+    ?headers:Http.Header.t ->
+    ?encoding:Http.Transfer.encoding ->
+    body -> t
+
+  val to_http : t -> Http.Response.t
 
   (** {1 Response Details} *)
 
@@ -99,6 +114,8 @@ module Response : sig
 
   val bad_request : t
   (** [bad_request t] returns a HTTP/1.1, 400 status response. *)
+
+  val write : t -> Reader.t -> Writer.t -> unit
 end
 
 (** [Server] is a HTTP 1.1 server. *)

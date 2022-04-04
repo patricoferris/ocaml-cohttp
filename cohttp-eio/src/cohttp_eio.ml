@@ -1,4 +1,5 @@
 module Reader = Reader
+module Writer = Writer
 module Chunk = Chunk
 module Request = Request
 module Response = Response

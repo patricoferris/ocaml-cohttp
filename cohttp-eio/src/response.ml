@@ -3,19 +3,23 @@ type t = {
   body : body;
   status : Http.Status.t;
   version : Http.Version.t;
+  encoding : Http.Transfer.encoding;
 }
 
 and body =
   | String of string
   | Chunked of write_chunk
-  | Custom of (Eio.Flow.sink -> unit)
+  | Custom of (Eio.Flow.source -> Eio.Flow.sink -> unit)
   | Empty
 
 and write_chunk = (Chunk.t -> unit) -> unit
 
 let create ?(version = `HTTP_1_1) ?(status = `OK)
-    ?(headers = Http.Header.init ()) body =
-  { headers; body; status; version }
+    ?(headers = Http.Header.init ()) ?(encoding = Http.Transfer.Chunked) body =
+  { headers; body; status; version; encoding }
+
+let to_http t = 
+  Http.Response.make ~version:t.version ~status:t.status ~headers:t.headers ~encoding:t.encoding ()
 
 (* Response Details *)
 
@@ -49,7 +53,7 @@ let write_chunked flow chunk_writer =
   in
   chunk_writer write
 
-let write t writer =
+let write t reader writer =
   let version = Http.Version.to_string t.version in
   let status = Http.Status.to_string t.status in
   Writer.write_string writer version;
@@ -66,7 +70,10 @@ let write t writer =
   Writer.write_string writer "\r\n";
   match t.body with
   | String s -> Writer.write_string writer s
-  | Custom f -> f (Writer.sink writer)
+  | Custom f -> 
+    Eio.Std.traceln "RES: %i" reader.Reader.off;
+    Eio.Std.traceln "LEN: %s" (Bigstringaf.to_string reader.Reader.buf);
+    f reader.Reader.source (Writer.sink writer)
   | Chunked chunk_writer -> write_chunked (Writer.sink writer) chunk_writer
   | Empty -> ()
 

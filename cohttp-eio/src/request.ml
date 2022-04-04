@@ -13,6 +13,16 @@ let meth t = t.meth
 let resource t = t.resource
 let version t = t.version
 
+let to_http ?(enc=Http.Transfer.Chunked) (t : t) =
+  Http.Request.{ 
+    headers = t.headers;
+    meth = t.meth;
+    resource = t.resource;
+    version = t.version;
+    scheme = None;
+    encoding = enc;
+  }
+
 let is_keep_alive t =
   match Http.Header.get t.headers "connection" with
   | Some "close" -> false

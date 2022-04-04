@@ -18,25 +18,25 @@ let domain_count =
 let rec handle_request t reader writer flow =
   match Request.parse reader with
   | request ->
-      let response = t.request_handler request in
-      Response.write response writer;
+    let response = t.request_handler request in
+      Response.write response reader writer;
       Writer.wakeup writer;
       if Request.is_keep_alive request then (
         (if not request.read_complete then
-         match Http.Header.get_transfer_encoding (Request.headers request) with
-         | Http.Transfer.Fixed _ -> ignore @@ Request.read_fixed request
-         | Http.Transfer.Chunked -> ignore @@ Request.read_chunk request ignore
-         | _ -> ());
+        match Http.Header.get_transfer_encoding (Request.headers request) with
+        | Http.Transfer.Fixed _ -> ignore @@ Request.read_fixed request
+        | Http.Transfer.Chunked -> ignore @@ Request.read_chunk request ignore
+        | _ -> ());
         handle_request t reader writer flow)
       else Eio.Flow.close flow
   | (exception End_of_file) | (exception Eio.Net.Connection_reset _) ->
       Eio.Flow.close flow
   | exception Parser.Parse_failure _e ->
-      Response.(write bad_request writer);
+      Response.(write bad_request reader writer);
       Writer.wakeup writer;
       Eio.Flow.close flow
   | exception _ ->
-      Response.(write internal_server_error writer);
+      Response.(write internal_server_error reader writer);
       Writer.wakeup writer;
       Eio.Flow.close flow
 

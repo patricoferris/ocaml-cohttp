@@ -16,6 +16,7 @@ let create len source =
 let length t = t.len
 let committed_bytes t = t.committed_bytes
 let pos t = t.pos
+let source t = t.source
 let incr_pos ?(n = 1) t = t.pos <- t.pos + n
 let writable_space t = Bigstringaf.length t.buf - t.len
 let trailing_space t = Bigstringaf.length t.buf - (t.off + t.len)
