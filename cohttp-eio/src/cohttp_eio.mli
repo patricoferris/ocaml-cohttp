@@ -22,11 +22,11 @@ end
 (** [Chunk] encapsulates HTTP/1.1 chunk transfer encoding data structures.
     https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
 module Chunk : sig
-  type t =
-    | Chunk of { size : int; data : Cstruct.t; extensions : extension list }
-    | Last_chunk of extension list
-
+  type t = Chunk of chunk | Last_chunk of extension list
+  and chunk = { size : int; data : Cstruct.t; extensions : extension list }
   and extension = { name : string; value : string option }
+
+  val pp : Format.formatter -> t -> unit
 end
 
 (** [Request] is a HTTP/1.1 request. *)
@@ -54,13 +54,17 @@ module Request : sig
       https://datatracker.ietf.org/doc/html/rfc7230#section-4.1.3. Otherwise it
       is [Error err] where [err] is the error text. *)
 
-  val set_read_complete : t -> unit
-
   (** {1 Custom Request Body Readers} *)
 
   val reader : t -> Reader.t
   (** [reader t] returns a [Reader.t] instance. This can be used to create a
       custom request body reader. *)
+
+  val set_read_complete : t -> unit
+
+  (** {1 Pretty Printer} *)
+
+  val pp : Format.formatter -> t -> unit
 end
 
 (** [Response] is a HTTP/1.1 response. *)

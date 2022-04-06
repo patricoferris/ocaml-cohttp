@@ -6,6 +6,8 @@
 
 (using mdx 0.2)
 
+(cram enable)
+
 (maintainers "Anil Madhavapeddy <anil@recoil.org>")
 
 (authors
@@ -343,6 +345,6 @@
   eio
   cstruct
   bigstringaf
+  fmt
   (http
-   (= :version))
-  ))
+   (= :version))))
