@@ -4,7 +4,6 @@ type t = {
   version : Http.Version.t;
   meth : Http.Method.t;
   resource : string;
-  mutable read_complete : bool;
 }
 
 let reader t = t.reader
@@ -73,19 +72,22 @@ let parse reader =
       let version = p_version reader in
       let headers = p_headers reader in
       commit reader;
-      { reader; read_complete = false; meth; resource; version; headers }
+      { reader; meth; resource; version; headers }
 
-let read_fixed t =
-  if t.read_complete then Error "End of file"
-  else
-    match Http.Header.get t.headers "content-length" with
-    | Some v -> (
-        try
-          let content_length = int_of_string v in
-          let content = Parser.take content_length t.reader in
-          Ok content
-        with e -> Error (Printexc.to_string e))
-    | None -> Error "Request is not a fixed content body"
+let read_fixed =
+  let read_complete = ref false in
+  fun t ->
+    if !read_complete then Error "End of file"
+    else
+      match Http.Header.get t.headers "content-length" with
+      | Some v -> (
+          try
+            let content_length = int_of_string v in
+            let content = Parser.take content_length t.reader in
+            read_complete := true;
+            Ok content
+          with e -> Error (Printexc.to_string e))
+      | None -> Error "Request is not a fixed content body"
 
 (* Chunked encoding parser *)
 
@@ -230,8 +232,9 @@ let read_chunk t =
   match Http.Header.get_transfer_encoding t.headers with
   | Http.Transfer.Chunked ->
       let total_read = ref 0 in
+      let read_complete = ref false in
       let rec chunk_loop f =
-        if t.read_complete then Error "End of file"
+        if !read_complete then Error "End of file"
         else
           let chunk = chunk !total_read t t.reader in
           match chunk with
@@ -240,14 +243,13 @@ let read_chunk t =
               total_read := !total_read + size;
               (chunk_loop [@tailcall]) f
           | `Last_chunk (extensions, updated_request) ->
-              t.read_complete <- true;
+              read_complete := true;
               f (Chunk.Last_chunk extensions);
               Ok updated_request
       in
       chunk_loop
   | _ -> fun _ -> Error "Request is not a chunked request"
 
-let set_read_complete t = t.read_complete <- true
 let pp_method fmt meth = Format.fprintf fmt "%s" (Http.Method.to_string meth)
 let pp_version fmt v = Format.fprintf fmt "%s" (Http.Version.to_string v)
 

@@ -60,11 +60,6 @@ module Request : sig
   (** [reader t] returns a [Reader.t] instance. This can be used to create a
       custom request body reader. *)
 
-  val set_read_complete : t -> unit
-  (** [set_read_complete t] configures [t] to denote that reading of request
-      body is complete. Call this function if you are using a custom request
-      body processor. *)
-
   (** {1 Pretty Printer} *)
 
   val pp : Format.formatter -> t -> unit

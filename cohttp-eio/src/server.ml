@@ -14,13 +14,8 @@ let rec handle_request reader writer flow handler =
       let response = handler request in
       Response.write response writer;
       Writer.wakeup writer;
-      if Request.is_keep_alive request then (
-        (if not request.read_complete then
-         match Http.Header.get_transfer_encoding (Request.headers request) with
-         | Http.Transfer.Fixed _ -> ignore @@ Request.read_fixed request
-         | Http.Transfer.Chunked -> ignore @@ Request.read_chunk request ignore
-         | _ -> ());
-        handle_request reader writer flow handler)
+      if Request.is_keep_alive request then
+        handle_request reader writer flow handler
       else Eio.Flow.close flow
   | (exception End_of_file) | (exception Eio.Net.Connection_reset _) ->
       Eio.Flow.close flow
