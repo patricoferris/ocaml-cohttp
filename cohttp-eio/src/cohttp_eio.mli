@@ -61,6 +61,9 @@ module Request : sig
       custom request body reader. *)
 
   val set_read_complete : t -> unit
+  (** [set_read_complete t] configures [t] to denote that reading of request
+      body is complete. Call this function if you are using a custom request
+      body processor. *)
 
   (** {1 Pretty Printer} *)
 
@@ -107,14 +110,19 @@ end
 
 (** [Server] is a HTTP 1.1 server. *)
 module Server : sig
-  type t
   type handler = Request.t -> Response.t
   type middleware = handler -> handler
 
   (** {1 Run Server} *)
 
-  val create : ?socket_backlog:int -> ?domains:int -> port:int -> handler -> t
-  val run : t -> Eio.Stdenv.t -> unit
+  val run :
+    ?socket_backlog:int ->
+    ?domains:int ->
+    port:int ->
+    Eio.Stdenv.t ->
+    Eio.Switch.t ->
+    handler ->
+    unit
 
   (** {1 Basic Handlers} *)
 
@@ -123,6 +131,7 @@ end
 
 (**/**)
 
+(** Do not use directly. Used for unit testing only. *)
 module Private : sig
   val create_reader : int -> Eio.Flow.source -> Reader.t
   val commit_reader : Reader.t -> unit

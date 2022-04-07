@@ -9,5 +9,5 @@ let app req =
   Response.text (Buffer.contents buf)
 
 let () =
-  let server = Server.create ~port:8080 app ~socket_backlog:128 in
-  Eio_main.run @@ fun env -> Server.run server (env :> Eio.Stdenv.t)
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw -> Server.run ~port:8080 env sw app
