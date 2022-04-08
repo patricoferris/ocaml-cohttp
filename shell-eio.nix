@@ -1,14 +1,11 @@
-{ pkgs ? import (fetchTarball
-  "https://github.com/NixOS/nixpkgs/archive/11fbbb2126ebb6c83b85908a7773979cbfe270d2.tar.gz")
-  { } }:
+{ pkgs ? import <nixpkgs> {} }:
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    pkg-config
-    gmp
     libev
-    zlib
-    rustup
+    gmp
+    pkg-config
+    curl
   ];
 
   LD_LIBRARY_PATH = with pkgs; lib.makeLibraryPath [pkgs.curl];
