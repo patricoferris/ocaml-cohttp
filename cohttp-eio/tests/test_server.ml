@@ -1,4 +1,4 @@
-open Cohttp_eio
+open Cohttp_eio.Server
 
 let app req =
   let body = match Request.read_fixed req with Ok s -> s | Error _ -> "" in
@@ -10,4 +10,4 @@ let app req =
 
 let () =
   Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw -> Server.run ~port:8080 env sw app
+  Eio.Switch.run @@ fun sw -> run ~port:8080 env sw app

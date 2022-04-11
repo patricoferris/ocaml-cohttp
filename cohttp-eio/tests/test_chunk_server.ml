@@ -1,4 +1,4 @@
-open Cohttp_eio
+open Cohttp_eio.Server
 
 let dump_chunk buf chunk =
   let s = Format.asprintf "\n%a" Chunk.pp chunk in
@@ -23,4 +23,4 @@ let () =
     ignore "An HTTP/1.1 server";
 
   Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw -> Server.run ~port:!port env sw app
+  Eio.Switch.run @@ fun sw -> run ~port:!port env sw app
