@@ -5,6 +5,7 @@ pkgs.mkShell {
     libev
     gmp
     pkg-config
+    nmap  #ncat testing tool
     curl
   ];
 
