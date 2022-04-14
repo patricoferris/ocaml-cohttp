@@ -49,7 +49,7 @@ jobs:
       - run: echo "PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig" >>"$GITHUB_ENV"
         if: ${{ matrix.os == 'macos-latest' }}
 
-      - run: opam depext -i re uri uri-sexp sexplib0 ppx_sexp_conv stringext fmt alcotest conf-libev lwt cmdliner conduit-lwt-unix magic-mime logs ounit js_of_ocaml-lwt js_of_ocaml-ppx async async_unix base core core_unix conduit-async mirage-crypto ipaddr conduit-mirage mirage-kv astring base_quickcheck ppx_assert ppx_compare ppx_here core_bench crowbar ocurl mirage-channel lwt_ppx
+      - run: opam depext -i re uri uri-sexp sexplib0 ppx_sexp_conv stringext fmt alcotest conf-libev lwt cmdliner conduit-lwt-unix magic-mime logs ounit js_of_ocaml-lwt js_of_ocaml-ppx async async_unix base core core_unix conduit-async mirage-crypto ipaddr conduit-mirage mirage-kv astring base_quickcheck ppx_assert ppx_compare ppx_here core_bench crowbar ocurl mirage-channel lwt_ppx core_kernel.v0.14.2
 
       - run: opam exec -- dune build -p http,cohttp,cohttp-lwt,cohttp-lwt-unix,cohttp-server-lwt-unix,cohttp-lwt-jsoo,cohttp-mirage,cohttp-async,cohttp-curl-async,cohttp-curl-lwt,cohttp-curl,cohttp-top --profile release
 
