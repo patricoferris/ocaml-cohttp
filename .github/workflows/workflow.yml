@@ -65,7 +65,7 @@ jobs:
           - ubuntu-latest
           - macos-latest
         ocaml-compiler:
-          - ocaml-variants.4.12.0+domains
+          - ocaml-variants.5.0.0+trunk
         local-packages:
           - |
             http.opam
@@ -90,8 +90,10 @@ jobs:
           dune-cache: ${{ matrix.os == 'ubuntu-latest' }}
           opam-local-packages: ${{ matrix.local-packages }}
 
+      - run: opam repo add alpha git+https://github.com/kit-ty-kate/opam-alpha-repository.git && opam update
+
       - run: opam install cstruct eio_main bigstringaf fmt mdx
 
-      - run: opam exec -- dune build -p http,cohttp-eio
+      - run: opam exec -- dune build -p http,cohttp-eio --profile release
 
-      - run: opam exec -- dune runtest cohttp-eio
+      - run: opam exec -- dune runtest cohttp-eio --profile release
