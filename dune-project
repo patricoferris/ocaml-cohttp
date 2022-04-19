@@ -89,23 +89,15 @@
  (description
   "An implementation of an HTTP client and server using the Lwt\nconcurrency library. See the `Cohttp_lwt_unix` module for information\non how to use this.  The package also installs `cohttp-curl-lwt`\nand a `cohttp-server-lwt` binaries for quick uses of a HTTP(S)\nclient and server respectively.\n\nAlthough the name implies that this only works under Unix, it\nshould also be fine under Windows too.\n")
  (depends
-  (ocaml
-   (>= 4.08))
-  (http
-   (= :version))
-  (cohttp
-   (= :version))
-  (cohttp-lwt
-   (= :version))
-  cmdliner
-  (lwt
-   (>= 3.0.0))
-  (conduit-lwt
-   (>= 5.0.0))
-  (conduit-lwt-unix
-   (>= 5.0.0))
-  (fmt
-   (>= 0.8.2))
+  (ocaml (>= 4.08))
+  (http (= :version))
+  (cohttp (= :version))
+  (cohttp-lwt (= :version))
+  (cmdliner (>= 1.1.0))
+  (lwt (>= 3.0.0))
+  (conduit-lwt (>= 5.0.0))
+  (conduit-lwt-unix (>= 5.0.0))
+  (fmt (>= 0.8.2))
   base-unix
   (ppx_sexp_conv
    (>= v0.13.0))
