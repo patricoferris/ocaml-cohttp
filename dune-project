@@ -339,5 +339,7 @@
   cstruct
   bigstringaf
   fmt
+  (mdx :with-test)
+  (eio_main :with-test)
   (http
    (= :version))))
