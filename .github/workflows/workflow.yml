@@ -53,7 +53,7 @@ jobs:
 
       - run: opam exec -- dune build -p http,cohttp,cohttp-lwt,cohttp-lwt-unix,cohttp-server-lwt-unix,cohttp-lwt-jsoo,cohttp-mirage,cohttp-async,cohttp-curl-async,cohttp-curl-lwt,cohttp-curl,cohttp-top --profile release
 
-      - run: opam exec -- dune runtest bench cohttp cohttp-async cohttp-curl cohttp-curl-async cohttp-curl-lwt cohttp-lwt cohttp-lwt-jsoo cohttp-lwt-unix cohttp-mirage cohttp-server-lwt-unix cohttp-top cohttp_async_test cohttp_lwt_jsoo_test cohttp_lwt_unix_test cohttp_server cohttp_test http --profile release
+      - run: opam exec -- dune runtest cohttp cohttp-async cohttp-curl cohttp-curl-async cohttp-curl-lwt cohttp-lwt cohttp-lwt-unix cohttp-mirage cohttp-server-lwt-unix cohttp-top cohttp_server http
 
       - run: opam exec -- make js-test
 
