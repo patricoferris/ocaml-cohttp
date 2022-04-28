@@ -66,7 +66,9 @@ let write t writer =
   Writer.write_string writer "\r\n";
   match t.body with
   | String s -> Writer.write_string writer s
-  | Custom f -> f (Writer.sink writer)
+  | Custom f -> 
+    Writer.wakeup writer;
+    f (Writer.sink writer)
   | Chunked chunk_writer -> write_chunked (Writer.sink writer) chunk_writer
   | Empty -> ()
 
