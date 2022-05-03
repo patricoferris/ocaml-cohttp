@@ -90,6 +90,7 @@ module Server : sig
     (** {1 Configuring Basic Response} *)
 
     val create : ?version:Http.Version.t -> ?status:Http.Status.t -> ?headers:Http.Header.t -> body -> t
+    (** [create body] returns a HTTP/1.1, 200 status response with no headers. *)
 
     val text : string -> t
     (** [text t s] returns a HTTP/1.1, 200 status response with "Content-Type"
