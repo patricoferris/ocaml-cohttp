@@ -97,7 +97,7 @@ module Server : sig
   and request = Http.Request.t * Reader.t
   and response = Http.Response.t * Body.t
 
-  (** {1 Request} *)
+  (** {1 Request Body} *)
 
   val read_fixed : request -> bytes
   (** [read_fixed (request,reader)] is bytes of length [n] if "Content-Length"
@@ -113,9 +113,9 @@ module Server : sig
   (** [read_chunked request chunk_handler] is [updated_headers] if
       "Transfer-Encoding" header value is "chunked" in [headers] and all chunks
       in [reader] are read successfully. [updated_headers] is the updated
-      headers as specified by the chunked encoding algorithm in
-      https://datatracker.ietf.org/doc/html/rfc7230#section-4.1.3. Otherwise it
-      is [Error err] where [err] is the error text.
+      headers as specified by the chunked encoding algorithm in https:
+      //datatracker.ietf.org/doc/html/rfc7230#section-4.1.3. Otherwise it is
+      [Error err] where [err] is the error text.
 
       @raise Invalid_argument
         if [Transfer-Encoding] header in [headers] is not specified as "chunked" *)
@@ -153,4 +153,56 @@ module Server : sig
   (** {1 Basic Handlers} *)
 
   val not_found_handler : handler
+end
+
+module Client : sig
+  type response = Http.Response.t * Reader.t
+
+  type body_disallowed_call =
+    ?version:Http.Version.t ->
+    ?headers:Http.Header.t ->
+    Eio.Stdenv.t ->
+    Eio.Switch.t ->
+    Eio.Net.Sockaddr.stream ->
+    Uri.t ->
+    response
+  (** [body_disallowed_call] denotes HTTP client calls where a request is not
+      allowed to have a request body. *)
+
+  type body_allowed_call =
+    ?version:Http.Version.t ->
+    ?headers:Http.Header.t ->
+    ?body:Body.t ->
+    Eio.Stdenv.t ->
+    Eio.Switch.t ->
+    Eio.Net.Sockaddr.stream ->
+    Uri.t ->
+    response
+  (** [body_allowed_call] denotes HTTP client calls where a request is allowed
+      to have a request body. *)
+
+  (** {1 Generic HTTP call} *)
+
+  val call :
+    ?meth:Http.Method.t ->
+    ?version:Http.Version.t ->
+    ?headers:Http.Header.t ->
+    ?body:Body.t ->
+    Eio.Stdenv.t ->
+    Eio.Switch.t ->
+    Eio.Net.Sockaddr.stream ->
+    Uri.t ->
+    response
+
+  (** {1 HTTP Calls with Body Disallowed} *)
+
+  val get : body_disallowed_call
+  val head : body_disallowed_call
+  val delete : body_disallowed_call
+
+  (** {1 HTTP Calls with Body Allowed} *)
+
+  val post : body_allowed_call
+  val put : body_allowed_call
+  val patch : body_allowed_call
 end

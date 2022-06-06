@@ -285,11 +285,9 @@ let ows = skip_while (function ' ' | '\t' -> true | _ -> false)
 let crlf = string "\r\n"
 let is_cr = function '\r' -> true | _ -> false
 let space = char '\x20'
-let p_meth = token <* space >>| Http.Method.of_string
-let p_resource = take_while1 (fun c -> c != ' ') <* space
 
-let p_version =
-  string "HTTP/1." *> any_char <* crlf >>= function
+let version =
+  string "HTTP/1." *> any_char >>= function
   | '1' -> return `HTTP_1_1
   | '0' -> return `HTTP_1_0
   | v -> fail (Format.sprintf "Invalid HTTP version: %C" v)
@@ -308,15 +306,3 @@ let http_headers =
       peek_char >>= function '\r' -> _emp | _ -> _rec)
   >>| Http.Header.of_list
   <* crlf
-
-let[@warning "-3"] http_request t =
-  match end_of_input t with
-  | true -> Stdlib.raise_notrace End_of_file
-  | false ->
-      let meth = p_meth t in
-      let resource = p_resource t in
-      let version = p_version t in
-      let headers = http_headers t in
-      let encoding = Http.Header.get_transfer_encoding headers in
-      commit t;
-      { Http.Request.meth; resource; version; headers; scheme = None; encoding }

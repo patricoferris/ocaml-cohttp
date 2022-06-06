@@ -69,23 +69,35 @@ let write_response (writer : Writer.t)
   let version = Http.Version.to_string response.version in
   let status = Http.Status.to_string response.status in
   Writer.write_string writer version;
-  Writer.write_string writer " ";
+  Writer.write_char writer ' ';
   Writer.write_string writer status;
   Writer.write_string writer "\r\n";
-  Body.write_headers writer response.headers;
+  Writer.write_headers writer response.headers;
   Writer.write_string writer "\r\n";
-  match body with
-  | Fixed s -> Writer.write_string writer s
-  | Chunked chunk_writer -> Body.write_chunked writer chunk_writer
-  | Custom f ->
-      Writer.wakeup writer;
-      f (writer.sink :> Eio.Flow.sink)
-  | Empty -> ()
+  Writer.write_body writer body
+
+(* request parsers *)
+
+let meth = Reader.(token >>| Http.Method.of_string)
+let resource = Reader.(take_while1 (fun c -> c != ' '))
+
+let[@warning "-3"] http_request reader =
+  let open Reader in
+  match end_of_input reader with
+  | true -> Stdlib.raise_notrace End_of_file
+  | false ->
+      let meth = (meth <* space) reader in
+      let resource = (resource <* space) reader in
+      let version = (version <* crlf) reader in
+      let headers = http_headers reader in
+      let encoding = Http.Header.get_transfer_encoding headers in
+      commit reader;
+      { Http.Request.meth; resource; version; headers; scheme = None; encoding }
 
 (* main *)
 
 let rec handle_request reader writer flow handler =
-  match Reader.http_request reader with
+  match http_request reader with
   | request ->
       let response, body = handler (request, reader) in
       write_response writer (response, body);
