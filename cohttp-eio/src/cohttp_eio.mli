@@ -102,21 +102,24 @@ module Server : sig
   val read_fixed : request -> bytes option
   (** [read_fixed (request,reader)] is [Some bytes], where [bytes] is of length
       [n] if "Content-Length" header is a valid integer value [n] in [request].
+
       [reader] is updated to reflect that [n] bytes was read.
 
       If ["Content-Length"] header is missing or is an invalid value in
       [request] OR if the request http method is not one of [POST], [PUT] or
       [PATCH], then [None] is returned. *)
 
-  val read_chunked : request -> (Body.chunk -> unit) -> Http.Header.t
-  (** [read_chunked request chunk_handler] is [updated_headers] if
-      "Transfer-Encoding" header value is "chunked" in [headers] and all chunks
+  val read_chunked : request -> (Body.chunk -> unit) -> Http.Header.t option
+  (** [read_chunked request chunk_handler] is [Some updated_headers] if
+      "Transfer-Encoding" header value is "chunked" in [request] and all chunks
       in [reader] are read successfully. [updated_headers] is the updated
       headers as specified by the chunked encoding algorithm in https:
       //datatracker.ietf.org/doc/html/rfc7230#section-4.1.3.
 
-      @raise Invalid_argument
-        if [Transfer-Encoding] header in [headers] is not specified as "chunked" *)
+      [reader] is updated to reflect the number of bytes read.
+
+      Returns [None] if [Transfer-Encoding] header in [headers] is not specified
+      as "chunked" *)
 
   (** {1 Response} *)
 

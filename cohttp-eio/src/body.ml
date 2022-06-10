@@ -195,7 +195,7 @@ let read_chunked reader headers f =
             (chunk_loop [@tailcall]) f
         | `Last_chunk (extensions, headers) ->
             f (Last_chunk extensions);
-            headers
+            Some headers
       in
       chunk_loop f
-  | _ -> raise @@ Invalid_argument "Request is not a chunked request"
+  | _ -> None

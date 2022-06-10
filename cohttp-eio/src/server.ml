@@ -23,7 +23,7 @@ let read_fixed ((request, reader) : Http.Request.t * Reader.t) =
       in
       raise @@ Invalid_argument err
 
-let read_chunked : request -> (Body.chunk -> unit) -> Http.Header.t =
+let read_chunked : request -> (Body.chunk -> unit) -> Http.Header.t option =
  fun (request, reader) f -> Body.read_chunked reader request.headers f
 
 (* Responses *)

@@ -26,12 +26,12 @@ let app (req, reader) =
   | "/" -> (
       let chunk_buf = Buffer.create 0 in
       match Server.read_chunked (req, reader) (dump_chunk chunk_buf) with
-      | headers ->
+      | Some headers ->
           let req = { req with headers } in
           Buffer.contents chunk_buf
           |> Format.asprintf "%a@ %s%!" pp req
           |> Server.text_response
-      | exception Invalid_argument _ -> Server.bad_request_response)
+      | None -> Server.bad_request_response)
   | _ -> Server.not_found_response
 
 let () =
