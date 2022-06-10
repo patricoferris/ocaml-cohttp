@@ -95,3 +95,7 @@ let put ?version ?headers ?body env sw stream uri =
 
 let patch ?version ?headers ?body env sw stream uri =
   call ~meth:`PATCH ?version ?headers ?body env sw stream uri
+
+(* Response Body *)
+let read_fixed ((response, reader) : Http.Response.t * Reader.t) =
+  Body.read_fixed reader response.headers

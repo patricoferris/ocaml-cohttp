@@ -203,4 +203,11 @@ module Client : sig
   val post : body_allowed_call
   val put : body_allowed_call
   val patch : body_allowed_call
+
+  (** {1 Response Body} *)
+
+  val read_fixed : response -> bytes option
+  (** [read_fixed (response,reader)] is [Some bytes], where [bytes] is of length
+      [n] if "Content-Length" header is a valid integer value [n] in [response].
+      [reader] is updated to reflect that [n] bytes was read. *)
 end
