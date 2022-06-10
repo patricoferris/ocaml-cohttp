@@ -17,7 +17,7 @@ let pp fmt (req : Http.Request.t) =
   Fmt.record fields fmt req
 
 let read_body (req, reader) =
-  let body = Server.read_fixed (req, reader) in
+  let body = Server.read_fixed (req, reader) |> Option.get in
   let buf = Buffer.create 0 in
   let fmt = Format.formatter_of_buffer buf in
   pp fmt req;

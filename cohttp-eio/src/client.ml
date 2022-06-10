@@ -60,6 +60,8 @@ let response reader =
       commit reader;
       Http.Response.make ~version ~status ~headers ()
 
+(* Generic HTTP call *)
+
 let call ?(meth = `GET) ?(version = `HTTP_1_1) ?(headers = Http.Header.init ())
     ?(body = Body.Empty) env sw stream uri =
   let sock = Net.connect ~sw (Stdenv.net env) stream in
@@ -72,6 +74,8 @@ let call ?(meth = `GET) ?(version = `HTTP_1_1) ?(headers = Http.Header.init ())
   let response = response reader in
   (response, reader)
 
+(*  HTTP Calls with Body Disallowed *)
+
 let get ?version ?headers env sw stream uri =
   call ~meth:`GET ?version ?headers env sw stream uri
 
@@ -80,6 +84,8 @@ let head ?version ?headers env sw stream uri =
 
 let delete ?version ?headers env sw stream uri =
   call ~meth:`DELETE ?version ?headers env sw stream uri
+
+(*  HTTP Calls with Body Allowed *)
 
 let post ?version ?headers ?body env sw stream uri =
   call ~meth:`POST ?version ?headers ?body env sw stream uri

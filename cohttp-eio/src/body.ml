@@ -45,12 +45,11 @@ let pp_chunk fmt = function
 open Reader
 
 let read_fixed t headers =
-  match Http.Header.get headers "Content-length" with
-  | Some v ->
-      let content_length = int_of_string v in
-      let content = take_bytes content_length t in
-      content
-  | None -> raise @@ Invalid_argument "Request is not a fixed content body"
+  let ( let* ) o f = Option.bind o f in
+  let ( let+ ) o f = Option.map f o in
+  let* v = Http.Header.get headers "Content-Length" in
+  let+ content_length = int_of_string_opt v in
+  take_bytes content_length t
 
 (* Chunked encoding parser *)
 
