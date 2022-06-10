@@ -346,6 +346,7 @@ should also be fine under Windows too.
   cstruct
   bigstringaf
   fmt
+  uri
   (mdx :with-test)
   (eio_main :with-test)
   (conf-nmap :with-test)
