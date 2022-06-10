@@ -97,5 +97,9 @@ let patch ?version ?headers ?body env sw stream uri =
   call ~meth:`PATCH ?version ?headers ?body env sw stream uri
 
 (* Response Body *)
+
 let read_fixed ((response, reader) : Http.Response.t * Reader.t) =
   Body.read_fixed reader response.headers
+
+let read_chunked : response -> (Body.chunk -> unit) -> Http.Header.t option =
+ fun (response, reader) f -> Body.read_chunked reader response.headers f

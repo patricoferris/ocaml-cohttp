@@ -213,4 +213,16 @@ module Client : sig
   (** [read_fixed (response,reader)] is [Some bytes], where [bytes] is of length
       [n] if "Content-Length" header is a valid integer value [n] in [response].
       [reader] is updated to reflect that [n] bytes was read. *)
+
+  val read_chunked : response -> (Body.chunk -> unit) -> Http.Header.t option
+  (** [read_chunked response chunk_handler] is [Some updated_headers] if
+      "Transfer-Encoding" header value is "chunked" in [response] and all chunks
+      in [reader] are read successfully. [updated_headers] is the updated
+      headers as specified by the chunked encoding algorithm in https:
+      //datatracker.ietf.org/doc/html/rfc7230#section-4.1.3.
+
+      [reader] is updated to reflect the number of bytes read.
+
+      Returns [None] if [Transfer-Encoding] header in [headers] is not specified
+      as "chunked" *)
 end
