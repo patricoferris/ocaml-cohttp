@@ -60,17 +60,30 @@ let response reader =
       commit reader;
       Http.Response.make ~version ~status ~headers ()
 
+(* Hacking TLS Support in... *)
+
+let tls_config =
+  Mirage_crypto_rng_unix.initialize ();
+  let null ?ip:_ ~host:_ _certs = Ok None in
+  Tls.Config.client ~authenticator:null ()
+
 (* Generic HTTP call *)
 
 let call ?(meth = `GET) ?(version = `HTTP_1_1) ?(headers = Http.Header.init ())
     ?(body = Body.Empty) env sw stream uri =
-  let sock = Net.connect ~sw (Stdenv.net env) stream in
-  let writer = Writer.create (sock :> Flow.sink) in
+  let writer, reader =
+    let sock = Net.connect ~sw (Stdenv.net env) stream in
+    match Uri.scheme uri with
+    | None -> ((sock :> Flow.sink), (sock :> Flow.source))
+    | Some "https" ->
+      let sock = Tls_eio.Tls_flow.client_of_flow ?host:(Domain_name.of_string_exn (Option.get @@ Uri.host uri) |> Domain_name.host |> Result.to_option) tls_config sock in
+      ((sock :> Flow.sink), (sock :> Flow.source))
+  in
+  let writer = Writer.create writer in
   Fiber.fork ~sw (fun () -> Writer.run writer);
   write_request writer (meth, version, headers, uri, body);
   Writer.wakeup writer;
-
-  let reader = Reader.create 0x1000 (sock :> Flow.source) in
+  let reader = Reader.create 0x1000 reader in
   let response = response reader in
   (response, reader)
 
