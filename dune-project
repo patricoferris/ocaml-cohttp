@@ -342,8 +342,7 @@ should also be fine under Windows too.
   (eio (>= 0.4))
   (eio_main :with-test)
   (uri :with-test)
-  cstruct
-  bigstringaf
+  uri
   fmt
   uri
   (mdx :with-test)

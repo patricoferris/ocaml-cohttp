@@ -10,7 +10,7 @@ let app (req, reader, _client_addr) =
   | "/" -> (
       let chunk_buf = Buffer.create 0 in
       match Server.read_chunked req reader (dump_chunk chunk_buf) with
-      | headers ->
+      | Some headers ->
           let req = { req with headers } in
           Buffer.contents chunk_buf
           |> Format.asprintf "%a@ %s%!" Http.Request.pp req

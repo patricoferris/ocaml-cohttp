@@ -1,6 +1,6 @@
 open Cohttp_eio
 
-let app (req, reader,_) =
+let app (req, reader, _) =
   match Http.Request.resource req with
   | "/get" ->
       let buf = Buffer.create 0 in
@@ -9,11 +9,11 @@ let app (req, reader,_) =
       Format.fprintf fmt "%!";
       Server.text_response (Buffer.contents buf)
   | "/get_error" -> (
-      match Server.read_fixed (req, reader) with
+      match Server.read_fixed req reader with
       | Some _ -> Server.text_response "FAIL"
       | None -> Server.text_response "PASS")
   | "/post" ->
-      let body = Server.read_fixed (req, reader) |> Option.get in
+      let body = Server.read_fixed req reader |> Option.get in
       let buf = Buffer.create 0 in
       let fmt = Format.formatter_of_buffer buf in
       Http.Request.pp fmt req;
@@ -22,5 +22,9 @@ let app (req, reader,_) =
   | _ -> Server.bad_request_response
 
 let () =
-  Eio_main.run @@ fun env ->
-  Eio.Switch.run @@ fun sw -> Server.run ~port:8080 env sw app
+  let port = ref 8080 in
+  Arg.parse
+    [ ("-p", Arg.Set_int port, " Listening port number(8080 by default)") ]
+    ignore "An HTTP/1.1 server";
+
+  Eio_main.run @@ fun env -> Server.run ~port:!port env app

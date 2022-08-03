@@ -1,8 +1,9 @@
 Test GET success.
 
-  $ test-server &
+  $ port=8082
+  $ test-server -p ${port} &
   $ running_pid=$!
-  $ crlf << EOF | ncat localhost 8080
+  $ crlf << EOF | ncat localhost ${port}
   > GET /get HTTP/1.1
   > 
   > EOF
@@ -19,9 +20,10 @@ Test GET success.
 Test GET error.
 The test should respond with error message since we are trying to read request body. HTTP 1.1 doesn't support request bodies in GET.
 
-  $ test-server &
+  $ port=8082
+  $ test-server -p ${port} &
   $ running_pid=$!
-  $ crlf << EOF | ncat localhost 8080
+  $ crlf << EOF | ncat localhost ${port}
   > GET /get_error HTTP/1.1
   > 
   > EOF
@@ -34,9 +36,10 @@ The test should respond with error message since we are trying to read request b
 
 Test POST
 
-  $ test-server &
+  $ port=8082
+  $ test-server -p ${port} &
   $ running_pid=$!
-  $ crlf << EOF | ncat localhost 8080
+  $ crlf << EOF | ncat localhost ${port}
   > POST /post HTTP/1.0
   > Content-Length:12
   > 
@@ -53,5 +56,3 @@ Test POST
   
   hello world!
   $ kill ${running_pid}
-
-
