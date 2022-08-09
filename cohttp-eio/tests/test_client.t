@@ -27,9 +27,3 @@ Test Client.post
   hello world!
 
   $ kill ${running_pid}
-
-Test Client.invalid_uri
-
-  $ test-client
-  Fatal error: exception Invalid_argument("uri: host missing")
-  [2]

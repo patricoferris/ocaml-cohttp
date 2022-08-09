@@ -19,6 +19,19 @@ let app (req, reader, _) =
       Http.Request.pp fmt req;
       Format.fprintf fmt "\n\n%s%!" body;
       Server.text_response (Buffer.contents buf)
+  | "/chunk" -> (
+      let dump_chunk buf chunk =
+        let s = Format.asprintf "\n%a" Body.pp_chunk chunk in
+        Buffer.add_string buf s
+      in
+      let chunk_buf = Buffer.create 0 in
+      match Server.read_chunked req reader (dump_chunk chunk_buf) with
+      | Some headers ->
+          let req = { req with headers } in
+          Buffer.contents chunk_buf
+          |> Format.asprintf "%a@ %s%!" Http.Request.pp req
+          |> Server.text_response
+      | None -> Server.bad_request_response)
   | _ -> Server.bad_request_response
 
 let () =

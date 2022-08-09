@@ -2,15 +2,15 @@ module Buf_read = Eio.Buf_read
 module Buf_write = Eio.Buf_write
 
 type response = Http.Response.t * Buf_read.t
-type host = string * int
-type scheme = [ `HTTP | `HTTPS ]
-type 'a conn = scheme -> host -> Eio.Flow.two_way as 'a
+type host = string * int option
+type resource_path = string
+type 'a conn = unit -> (host * Eio.Flow.two_way as 'a)
 
 type 'a body_disallowed_call =
   ?version:Http.Version.t ->
   ?headers:Http.Header.t ->
   'a conn ->
-  Uri.t ->
+  resource_path ->
   response
 (** [body_disallowed_call] denotes HTTP client calls where a request is not
     allowed to have a request body. *)
@@ -20,7 +20,7 @@ type 'a body_allowed_call =
   ?headers:Http.Header.t ->
   ?body:Body.t ->
   'a conn ->
-  Uri.t ->
+  resource_path ->
   response
 
 (* Request line https://datatracker.ietf.org/doc/html/rfc7230#section-3.1.1 *)
@@ -65,29 +65,14 @@ let response buf_read =
 (* Generic HTTP call *)
 
 let call ?(meth = `GET) ?(version = `HTTP_1_1) ?(headers = Http.Header.init ())
-    ?(body = Body.Empty) flow_fn uri =
-  let host_name =
-    match Uri.host uri with
-    | Some h -> h
-    | None -> raise (invalid_arg "uri: host missing")
+    ?(body = Body.Empty) flow_fn resource_path =
+  let (host_name, host_port), flow = flow_fn () in
+  let host =
+    match host_port with
+    | Some port -> host_name ^ ":" ^ string_of_int port
+    | None -> host_name
   in
-  let scheme =
-    match Uri.scheme uri with
-    | Some "http" -> `HTTP
-    | Some "https" -> `HTTPS
-    | Some _ -> raise (invalid_arg "uri: invalid uri scheme")
-    | None -> `HTTP
-  in
-  let port =
-    match (Uri.port uri, scheme) with
-    | Some p, _ -> p
-    | None, `HTTP -> 80
-    | None, `HTTPS -> 443
-  in
-  let flow = flow_fn scheme (host_name, port) in
-  let resource_path = Uri.path_and_query uri in
   Buf_write.with_flow ~initial_size:0x1000 flow (fun writer ->
-      let host = host_name ^ ":" ^ string_of_int port in
       let headers = Http.Header.add_unless_exists headers "Host" host in
       write_request writer (meth, version, headers, resource_path, body);
       let reader =

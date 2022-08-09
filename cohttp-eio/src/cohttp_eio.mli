@@ -103,25 +103,25 @@ end
 module Client : sig
   type response = Http.Response.t * Eio.Buf_read.t
 
-  type host = string * int
+  type host = string * int option
   (** Represents a server host domain name and port, e.g. www.example.org:8080,
       www.reddit.com *)
 
-  type scheme = [ `HTTP | `HTTPS ]
-  (** Represents HTTP connection schemes. *)
+  type resource_path = string
+  (** Represents HTTP request resource path, e.g. "/shop/purchase",
+      "/shop/items", "/shop/categories/" etc. *)
 
-  type 'a conn = scheme -> host -> Eio.Flow.two_way as 'a
-  (** [a 'conn] is a lambda [(fun scheme host -> ... flow)] where [scheme]
-      represents a HTTP scheme and [host] represents a server host domain name
-      or address.
+  type 'a conn = unit -> (host * Eio.Flow.two_way as 'a)
+  (** [a 'conn] is [(host, flow)] where [host] represents a server host domain name
+      or address along with the optional tcp/ip port.
 
-      [flow] is the Eio flow value returned by the lambda. *)
+      [flow] is the Eio flow value which is connected to the [host]. *)
 
   type 'a body_disallowed_call =
     ?version:Http.Version.t ->
     ?headers:Http.Header.t ->
     'a conn ->
-    Uri.t ->
+    resource_path ->
     response
   (** [body_disallowed_call] denotes HTTP client calls where a request is not
       allowed to have a request body.
@@ -137,7 +137,7 @@ module Client : sig
     ?headers:Http.Header.t ->
     ?body:Body.t ->
     'a conn ->
-    Uri.t ->
+    resource_path ->
     response
   (** [body_allowed_call] denotes HTTP client calls where a request can
       optionally have a request body.
@@ -156,7 +156,7 @@ module Client : sig
     ?headers:Http.Header.t ->
     ?body:Body.t ->
     'a conn ->
-    Uri.t ->
+    resource_path ->
     response
 
   (** {1 HTTP Calls with Body Disallowed} *)
