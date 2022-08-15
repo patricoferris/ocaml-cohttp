@@ -53,14 +53,11 @@ let reason_phrase =
 (* https://datatracker.ietf.org/doc/html/rfc7230#section-3.1.2 *)
 let response buf_read =
   let open Buf_read.Syntax in
-  match Buf_read.at_end_of_input buf_read with
-  | true -> Stdlib.raise_notrace End_of_file
-  | false ->
-      let version = Rwer.(version <* space) buf_read in
-      let status = Rwer.(status_code <* space) buf_read in
-      let () = Rwer.(reason_phrase *> crlf *> return ()) buf_read in
-      let headers = Rwer.http_headers buf_read in
-      Http.Response.make ~version ~status ~headers ()
+  let version = Rwer.(version <* space) buf_read in
+  let status = Rwer.(status_code <* space) buf_read in
+  let () = Rwer.(reason_phrase *> crlf *> Buf_read.return ()) buf_read in
+  let headers = Rwer.http_headers buf_read in
+  Http.Response.make ~version ~status ~headers ()
 
 (* Generic HTTP call *)
 

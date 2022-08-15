@@ -53,13 +53,14 @@ module Server : sig
     Eio.Buf_read.t ->
     (Body.chunk -> unit) ->
     Http.Header.t option
-  (** [read_chunked request chunk_handler] is [Some updated_headers] if
+  (** [read_chunked request buf_read chunk_handler] is [Some updated_headers] if
       "Transfer-Encoding" header value is "chunked" in [request] and all chunks
-      in [reader] are read successfully. [updated_headers] is the updated
+      in [buf_read] are read successfully. [updated_headers] is the updated
       headers as specified by the chunked encoding algorithm in https:
-      //datatracker.ietf.org/doc/html/rfc7230#section-4.1.3. [reader] is updated
-      to reflect the number of bytes read. Returns [None] if [Transfer-Encoding]
-      header in [headers] is not specified as "chunked" *)
+      //datatracker.ietf.org/doc/html/rfc7230#section-4.1.3.
+
+      [buf_read] is updated to reflect the number of bytes read. Returns [None]
+      if [Transfer-Encoding] header in [headers] is not specified as "chunked" *)
 
   (** {1 Response} *)
 
@@ -112,8 +113,8 @@ module Client : sig
       "/shop/items", "/shop/categories/" etc. *)
 
   type 'a conn = unit -> (host * Eio.Flow.two_way as 'a)
-  (** [a 'conn] is [(host, flow)] where [host] represents a server host domain name
-      or address along with the optional tcp/ip port.
+  (** [a 'conn] is [(host, flow)] where [host] represents a server host domain
+      name or address along with the optional tcp/ip port.
 
       [flow] is the Eio flow value which is connected to the [host]. *)
 
