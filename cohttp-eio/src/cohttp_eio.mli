@@ -86,6 +86,7 @@ module Server : sig
   val run :
     ?socket_backlog:int ->
     ?domains:int ->
+    ?addr:Eio.Net.Ipaddr.v4v6 ->
     port:int ->
     < domain_mgr : Eio.Domain_manager.t ; net : Eio.Net.t ; .. > ->
     handler ->

@@ -126,13 +126,13 @@ let run_domain ssock handler =
       in
       loop ())
 
-let run ?(socket_backlog = 128) ?(domains = domain_count) ~port env handler =
+let run ?(socket_backlog = 128) ?(domains = domain_count) ?(addr = Eio.Net.Ipaddr.V4.loopback) ~port env handler =
   Switch.run @@ fun sw ->
   let domain_mgr = Eio.Stdenv.domain_mgr env in
   let ssock =
     Eio.Net.listen (Eio.Stdenv.net env) ~sw ~reuse_addr:true ~reuse_port:true
       ~backlog:socket_backlog
-      (`Tcp (Eio.Net.Ipaddr.V4.loopback, port))
+      (`Tcp (addr, port))
   in
   for _ = 2 to domains do
     Eio.Std.Fiber.fork ~sw (fun () ->
