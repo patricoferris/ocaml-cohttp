@@ -3,11 +3,11 @@ module Stdenv = Eio.Stdenv
 module Switch = Eio.Switch
 open Cohttp_eio
 
-let conn env sw port () =
+let conn env sw port resource_path =
   let addr = `Tcp (Net.Ipaddr.V4.loopback, port) in
-  let flow = (Net.connect ~sw (Stdenv.net env) addr :> Eio.Flow.two_way) in
+  let flow = Net.connect ~sw env#net addr in
   let host = ("localhost", Some port) in
-  (host, flow)
+  (resource_path, host, flow)
 
 let get env sw port =
   let res =

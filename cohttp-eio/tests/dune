@@ -1,6 +1,6 @@
 (executables
  (names test_server test_client crlf)
- (libraries cohttp_eio eio_main fmt))
+ (libraries cohttp_eio eio_main fmt uri))
 
 (mdx
  (package cohttp-eio)

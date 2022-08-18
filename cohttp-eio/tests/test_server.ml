@@ -2,12 +2,7 @@ open Cohttp_eio
 
 let app (req, reader, _) =
   match Http.Request.resource req with
-  | "/get" ->
-      let buf = Buffer.create 0 in
-      let fmt = Format.formatter_of_buffer buf in
-      Http.Request.pp fmt req;
-      Format.fprintf fmt "%!";
-      Server.text_response (Buffer.contents buf)
+  | "/get" -> Server.text_response (Fmt.to_to_string Http.Request.pp req)
   | "/get_error" -> (
       match Server.read_fixed req reader with
       | Some _ -> Server.text_response "FAIL"
