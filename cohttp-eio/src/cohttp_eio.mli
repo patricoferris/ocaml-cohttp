@@ -21,7 +21,9 @@ module Body : sig
   }
 
   and chunk_extension = { name : string; value : string option }
-
+  
+  val write_chunks : Eio.Buf_write.t -> chunk -> unit
+  val write_body : ?write_chunked_trailers:bool -> Eio.Buf_write.t -> t -> unit
   val pp_chunk_extension : Format.formatter -> chunk_extension list -> unit
   val pp_chunk : Format.formatter -> chunk -> unit
 end
@@ -61,6 +63,11 @@ module Server : sig
 
       [buf_read] is updated to reflect the number of bytes read. Returns [None]
       if [Transfer-Encoding] header in [headers] is not specified as "chunked" *)
+
+  (** {2 Low-level Interface} *)
+  val read_request : Eio.Buf_read.t -> Http.Request.t
+
+  val write_response : ?request:Http.Request.t -> Eio.Buf_write.t -> Http.Response.t * Body.t -> unit
 
   (** {1 Response} *)
 
@@ -190,4 +197,8 @@ module Client : sig
 
       Returns [None] if [Transfer-Encoding] header in [headers] is not specified
       as "chunked" *)
+
+    val write_request : bool -> Http.Request.t -> Eio.Buf_write.t -> Body.t -> unit
+
+    val response : Eio.Buf_read.t -> Http.Response.t
 end

@@ -217,8 +217,7 @@ let read_chunked reader headers f =
       chunk_loop f
   | _ -> None
 
-(* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
-let write_chunked ?(write_chunked_trailers = false) writer chunk_writer =
+let write_chunks writer v = 
   let write_extensions exts =
     List.iter
       (fun { name; value } ->
@@ -228,18 +227,21 @@ let write_chunked ?(write_chunked_trailers = false) writer chunk_writer =
         Buf_write.string writer (Printf.sprintf ";%s%s" name v))
       exts
   in
-  let write_body = function
-    | Chunk { size; data; extensions = exts } ->
-        Buf_write.string writer (Printf.sprintf "%X" size);
-        write_extensions exts;
-        Buf_write.string writer "\r\n";
-        Buf_write.string writer data;
-        Buf_write.string writer "\r\n"
-    | Last_chunk exts ->
-        Buf_write.string writer "0";
-        write_extensions exts;
-        Buf_write.string writer "\r\n"
-  in
+  match v with
+  | Chunk { size; data; extensions = exts } ->
+      Buf_write.string writer (Printf.sprintf "%X" size);
+      write_extensions exts;
+      Buf_write.string writer "\r\n";
+      Buf_write.string writer data;
+      Buf_write.string writer "\r\n"
+  | Last_chunk exts ->
+      Buf_write.string writer "0";
+      write_extensions exts;
+      Buf_write.string writer "\r\n"
+
+(* https://datatracker.ietf.org/doc/html/rfc7230#section-4.1 *)
+let write_chunked ?(write_chunked_trailers = false) writer chunk_writer =
+  let write_body = write_chunks writer in
   chunk_writer.body_writer write_body;
   if write_chunked_trailers then
     chunk_writer.trailer_writer (Rwer.write_headers writer);
